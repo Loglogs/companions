@@ -16,7 +16,7 @@
   <rect width="1400" height="900" rx="30" fill="#000" filter="url(#paper)" opacity="0.9"/>
 
   <text x="80" y="112" fill="#2F241D" font-family="Inter, Arial, sans-serif" font-size="48" font-weight="800">A plain-file vault</text>
-  <text x="80" y="156" fill="#75685B" font-family="Inter, Arial, sans-serif" font-size="22">The same shape language, but explaining the folder model on disk.</text>
+  <text x="80" y="156" fill="#75685B" font-family="Inter, Arial, sans-serif" font-size="22">Plain markdown files on disk. No database, no lock-in. Edit in any text editor.</text>
 
   <g opacity="0.95">
     <path d="M700 168L912 318V618L700 768L488 618V318L700 168Z" fill="#F2CC62"/>

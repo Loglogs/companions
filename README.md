@@ -51,7 +51,11 @@ The project includes:
 These four personas are intentional. You can rename them and choose new emoji during setup, but the core project ships with exactly four slots.
 
 <p align="center">
-  <img src="docs/screenshots/four-agents.png" alt="All four Companions agent tabs" width="480">
+  <img src="docs/screenshots/four-agents.svg" alt="All four Companions agent roles" width="700">
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/four-agents.png" alt="All four Companions agent tabs (live)" width="480">
 </p>
 
 See `docs/extending-personas.md` if you want to fork the project and add a fifth.
@@ -59,6 +63,10 @@ See `docs/extending-personas.md` if you want to fork the project and add a fifth
 ---
 
 ## Quick start
+
+<p align="center">
+  <img src="docs/screenshots/hero.svg" alt="Companions overview" width="700">
+</p>
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/sanieldoe/companions/main/install.sh | bash
@@ -119,7 +127,11 @@ A fresh setup creates:
 Companions does **not** lock your data into a database format. These are plain files on disk.
 
 <p align="center">
-  <img src="docs/screenshots/vault-overview.png" alt="Companions vault directory structure" width="560">
+  <img src="docs/screenshots/vault-overview.svg" alt="Companions vault structure" width="700">
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/vault-overview.png" alt="Companions vault directory (live)" width="560">
 </p>
 
 ---

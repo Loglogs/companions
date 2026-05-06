@@ -16,7 +16,7 @@
   <rect width="1400" height="1000" rx="30" fill="#000" filter="url(#paper)" opacity="0.9"/>
 
   <text x="80" y="112" fill="#2F241D" font-family="Inter, Arial, sans-serif" font-size="48" font-weight="800">The four agents</text>
-  <text x="80" y="156" fill="#75685B" font-family="Inter, Arial, sans-serif" font-size="22">Audited and corrected: Mentor=circle, Shapeshifter=triangle, Keeper=hexagon, Tracker=square.</text>
+  <text x="80" y="156" fill="#75685B" font-family="Inter, Arial, sans-serif" font-size="22">Each with a distinct role, accent colour, and shape. All sharing one vault.</text>
 
   <g filter="url(#shadow)">
     <rect x="80" y="220" width="580" height="300" rx="32" fill="#FBF6ED"/>
