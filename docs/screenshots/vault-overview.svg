@@ -18,13 +18,6 @@
   <text x="80" y="112" fill="#2F241D" font-family="Inter, Arial, sans-serif" font-size="48" font-weight="800">A plain-file vault</text>
   <text x="80" y="156" fill="#75685B" font-family="Inter, Arial, sans-serif" font-size="22">Plain markdown files on disk. No database, no lock-in. Edit in any text editor.</text>
 
-  <g opacity="0.95">
-    <path d="M700 168L912 318V618L700 768L488 618V318L700 168Z" fill="#F2CC62"/>
-    <rect x="456" y="306" width="164" height="164" rx="12" fill="#4A8AC8"/>
-    <path d="M748 246L870 532H626L748 246Z" fill="#DF6949"/>
-    <circle cx="650" cy="606" r="170" fill="#85C65E"/>
-  </g>
-
   <g filter="url(#shadow)">
     <rect x="106" y="666" width="1188" height="150" rx="30" fill="#FBF6ED"/>
   </g>
