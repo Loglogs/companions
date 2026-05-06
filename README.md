@@ -67,7 +67,7 @@ Inspired by structured monk-style journalling, Tracker gives you a daily rhythm 
 <td></td>
 <td valign="top">
 
-### Mentor — Step by Step
+### Sensei — Step by Step Mentor
 
 The best thinking rarely happens fast. Mentor is designed to slow you down.
 
