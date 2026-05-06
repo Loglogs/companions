@@ -302,7 +302,7 @@ docs/       Networking, sync, self-hosting, extension notes
 
 ## Acknowledgements
 
-- **Pi Coding Agent** — the core agent engine powering Companions
+- [Pi coding agent](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent) — the core agent engine powering Companions
 - [Andrej Karpathy](https://karpathy.ai) — inspiration for the Keeper wiki model
 - [@clack/prompts](https://github.com/bombshell-dev/clack) — TUI setup wizard
 - [Expo / EAS](https://expo.dev/) — Android build and distribution
