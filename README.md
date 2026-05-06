@@ -307,7 +307,6 @@ docs/       Networking, sync, self-hosting, extension notes
 - [@clack/prompts](https://github.com/bombshell-dev/clack) — TUI setup wizard
 - [Expo / EAS](https://expo.dev/) — Android build and distribution
 - [Tailscale](https://tailscale.com/) — recommended remote access tunnel
-- [LanceDB](https://lancedb.github.io/lancedb/) — local vector search for knowledge retrieval
 
 ---
 
