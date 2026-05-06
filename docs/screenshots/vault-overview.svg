@@ -46,30 +46,34 @@
   </g>
 
   <g>
-    <rect x="112" y="260" width="72" height="72" rx="10" fill="#4A8AC8"/>
-    <text x="112" y="372" fill="#2F241D" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="800">raw/</text>
-    <text x="112" y="404" fill="#6B6259" font-family="Inter, Arial, sans-serif" font-size="17">Dump zone for quick notes,</text>
-    <text x="112" y="430" fill="#6B6259" font-family="Inter, Arial, sans-serif" font-size="17">clippings, and transcripts.</text>
+    <path d="M114 280C114 268.954 122.954 260 134 260H190L210 278H286C297.046 278 306 286.954 306 298V312H114V280Z" fill="#A9C7E7"/>
+    <rect x="114" y="294" width="192" height="62" rx="14" fill="#4A8AC8"/>
+    <text x="114" y="372" fill="#2F241D" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="800">raw/</text>
+    <text x="114" y="404" fill="#6B6259" font-family="Inter, Arial, sans-serif" font-size="17">Dump zone for quick notes,</text>
+    <text x="114" y="430" fill="#6B6259" font-family="Inter, Arial, sans-serif" font-size="17">clippings, and transcripts.</text>
   </g>
 
   <g>
-    <path d="M469 258L523 352H415L469 258Z" fill="#DF6949"/>
-    <text x="422" y="372" fill="#2F241D" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="800">wiki/</text>
-    <text x="422" y="404" fill="#6B6259" font-family="Inter, Arial, sans-serif" font-size="17">Cleaned-up knowledge with</text>
-    <text x="422" y="430" fill="#6B6259" font-family="Inter, Arial, sans-serif" font-size="17">links, summaries, and structure.</text>
+    <path d="M424 280C424 268.954 432.954 260 444 260H500L520 278H596C607.046 278 616 286.954 616 298V312H424V280Z" fill="#F2B6A4"/>
+    <rect x="424" y="294" width="192" height="62" rx="14" fill="#DF6949"/>
+    <text x="424" y="372" fill="#2F241D" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="800">wiki/</text>
+    <text x="424" y="404" fill="#6B6259" font-family="Inter, Arial, sans-serif" font-size="17">Cleaned-up knowledge with</text>
+    <text x="424" y="430" fill="#6B6259" font-family="Inter, Arial, sans-serif" font-size="17">links, summaries, and structure.</text>
   </g>
 
   <g>
-    <circle cx="830" cy="298" r="56" fill="#85C65E"/>
-    <text x="782" y="372" fill="#2F241D" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="800">journal/</text>
-    <text x="782" y="404" fill="#6B6259" font-family="Inter, Arial, sans-serif" font-size="17">Dated entries, reflections,</text>
-    <text x="782" y="430" fill="#6B6259" font-family="Inter, Arial, sans-serif" font-size="17">and timestamped notes.</text>
+    <path d="M784 280C784 268.954 792.954 260 804 260H860L880 278H956C967.046 278 976 286.954 976 298V312H784V280Z" fill="#C7E5B1"/>
+    <rect x="784" y="294" width="192" height="62" rx="14" fill="#85C65E"/>
+    <text x="784" y="372" fill="#2F241D" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="800">journal/</text>
+    <text x="784" y="404" fill="#6B6259" font-family="Inter, Arial, sans-serif" font-size="17">Dated entries, reflections,</text>
+    <text x="784" y="430" fill="#6B6259" font-family="Inter, Arial, sans-serif" font-size="17">and timestamped notes.</text>
   </g>
 
   <g>
-    <path d="M1160 250L1224 296V382L1160 428L1096 382V296L1160 250Z" fill="#F2CC62"/>
-    <text x="1092" y="372" fill="#2F241D" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="800">projects/</text>
-    <text x="1092" y="404" fill="#6B6259" font-family="Inter, Arial, sans-serif" font-size="17">Plans, long-form work, and</text>
-    <text x="1092" y="430" fill="#6B6259" font-family="Inter, Arial, sans-serif" font-size="17">structured project files.</text>
+    <path d="M1094 280C1094 268.954 1102.95 260 1114 260H1170L1190 278H1266C1277.05 278 1286 286.954 1286 298V312H1094V280Z" fill="#F4DF9A"/>
+    <rect x="1094" y="294" width="192" height="62" rx="14" fill="#F2CC62"/>
+    <text x="1094" y="372" fill="#2F241D" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="800">projects/</text>
+    <text x="1094" y="404" fill="#6B6259" font-family="Inter, Arial, sans-serif" font-size="17">Plans, long-form work, and</text>
+    <text x="1094" y="430" fill="#6B6259" font-family="Inter, Arial, sans-serif" font-size="17">structured project files.</text>
   </g>
 </svg>

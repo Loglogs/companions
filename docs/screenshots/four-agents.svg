@@ -16,7 +16,7 @@
   <rect width="1400" height="1000" rx="30" fill="#000" filter="url(#paper)" opacity="0.9"/>
 
   <text x="80" y="112" fill="#2F241D" font-family="Inter, Arial, sans-serif" font-size="48" font-weight="800">The four agents</text>
-  <text x="80" y="156" fill="#75685B" font-family="Inter, Arial, sans-serif" font-size="22">Styled to match the logo: flat shapes, warm paper, soft overlaps.</text>
+  <text x="80" y="156" fill="#75685B" font-family="Inter, Arial, sans-serif" font-size="22">Audited and corrected: Mentor=circle, Shapeshifter=triangle, Keeper=hexagon, Tracker=square.</text>
 
   <g filter="url(#shadow)">
     <rect x="80" y="220" width="580" height="300" rx="32" fill="#FBF6ED"/>
@@ -26,8 +26,8 @@
   </g>
 
   <g>
-    <circle cx="236" cy="368" r="92" fill="#85C65E" opacity="0.9"/>
-    <rect x="174" y="274" width="110" height="110" rx="12" fill="#4A8AC8" opacity="0.9"/>
+    <circle cx="224" cy="364" r="102" fill="#85C65E" opacity="0.92"/>
+    <circle cx="264" cy="326" r="46" fill="#9CD97A" opacity="0.38"/>
     <text x="336" y="320" fill="#314528" font-family="Inter, Arial, sans-serif" font-size="32" font-weight="800">Mentor</text>
     <text x="336" y="354" fill="#6B8160" font-family="Inter, Arial, sans-serif" font-size="18">Thinker</text>
     <text x="336" y="410" fill="#605850" font-family="Inter, Arial, sans-serif" font-size="19">Deep thinking, debugging, learning,</text>
@@ -37,8 +37,8 @@
   </g>
 
   <g>
-    <path d="M903 274L1093 410H1093V410V464L903 600L713 464V410L903 274Z" fill="#F2CC62" opacity="0.55"/>
-    <path d="M950 282L1058 490H842L950 282Z" fill="#DF6949" opacity="0.92"/>
+    <path d="M928 268L1048 488H808L928 268Z" fill="#DF6949" opacity="0.94"/>
+    <path d="M966 334L1034 458H898L966 334Z" fill="#E88A6F" opacity="0.34"/>
     <text x="1012" y="320" fill="#5A2E22" font-family="Inter, Arial, sans-serif" font-size="32" font-weight="800">Shapeshifter</text>
     <text x="1012" y="354" fill="#9B6A58" font-family="Inter, Arial, sans-serif" font-size="18">Maker</text>
     <text x="1012" y="410" fill="#605850" font-family="Inter, Arial, sans-serif" font-size="19">Fast experiments, prototypes,</text>
@@ -48,8 +48,8 @@
   </g>
 
   <g>
-    <path d="M192 650L326 742V860L192 952L58 860V742L192 650Z" fill="#F2CC62" opacity="0.8"/>
-    <circle cx="246" cy="778" r="96" fill="#85C65E" opacity="0.88"/>
+    <path d="M224 656L322 724V856L224 924L126 856V724L224 656Z" fill="#F2CC62" opacity="0.92"/>
+    <path d="M224 706L278 742V814L224 850L170 814V742L224 706Z" fill="#F6DB87" opacity="0.40"/>
     <text x="336" y="690" fill="#5B4821" font-family="Inter, Arial, sans-serif" font-size="32" font-weight="800">Keeper</text>
     <text x="336" y="724" fill="#9D8252" font-family="Inter, Arial, sans-serif" font-size="18">Memory</text>
     <text x="336" y="780" fill="#605850" font-family="Inter, Arial, sans-serif" font-size="19">Notes, journaling, wiki upkeep,</text>
@@ -59,8 +59,8 @@
   </g>
 
   <g>
-    <rect x="832" y="646" width="126" height="126" rx="14" fill="#4A8AC8" opacity="0.92"/>
-    <path d="M922 686L1018 848H826L922 686Z" fill="#DF6949" opacity="0.86"/>
+    <rect x="818" y="654" width="196" height="196" rx="18" fill="#4A8AC8" opacity="0.94"/>
+    <rect x="862" y="698" width="108" height="108" rx="12" fill="#76A8D7" opacity="0.36"/>
     <text x="1012" y="690" fill="#244362" font-family="Inter, Arial, sans-serif" font-size="32" font-weight="800">Tracker</text>
     <text x="1012" y="724" fill="#6583A1" font-family="Inter, Arial, sans-serif" font-size="18">Planner</text>
     <text x="1012" y="780" fill="#605850" font-family="Inter, Arial, sans-serif" font-size="19">Calendar, tasks, reminders,</text>
