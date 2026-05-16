@@ -55,23 +55,27 @@ Each ships with a default name, emoji, and character. Rename them and tune the p
 
 ---
 
-## 💬 Chat — Talk to Mentor or Shapeshifter
+## 🐸🦊 Mentor & Shapeshifter
+
+Two agents, one shared space. They're opposites by design — Mentor slows you down, Shapeshifter speeds you up. Which one you reach for depends on whether you need to understand something or build something.
+
+<!-- screenshot: mentor-shapeshifter-pair -->
+
+### 💬 Conversation
 
 <!-- screenshot: chat-tab -->
 
-The Chat tab gives you direct conversation with both Mentor and Shapeshifter. Switch between them depending on whether you need patience or momentum.
+The Chat tab lets you talk to either. Switch between them at any point.
 
-**Mentor** asks the right question before touching anything. One step at a time, one next action per response, `Step X of Y` progress markers. Canvas is opt-in — only when you ask.
+**Mentor** asks the right question before touching anything. One step at a time, one next action per response, `Step X of Y` progress markers. Canvas only when you ask.
 
 **Shapeshifter** infers your intent and acts. States one assumption in a line, then builds. Pivots fast if the read was off.
 
----
+### 🎨 Canvas — React app playground
 
-## 🦊 Shapeshifter — React app playground
+<!-- screenshot: canvas-tab -->
 
-<!-- screenshot: shapeshifter-tab -->
-
-Shapeshifter's canvas is not a chat reply. It's a persistent, structured workspace saved to your vault — a mini app rendered live inside the tab.
+Shapeshifter's default output is not a chat reply. It's a persistent, structured workspace saved to your vault — a live app rendered inside the tab.
 
 Canvases are built from 10 composable blocks:
 
