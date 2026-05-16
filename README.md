@@ -28,25 +28,50 @@ All four agents share one vault. A calendar event from Tracker shows up if Mento
 
 ---
 
-## The four agents
+## The four personas
 
-Each ships with a default name and character. Rename them, pick an emoji, and tune the persona during setup or any time from the dashboard.
+Each ships with a default name, emoji, and character. Rename them and tune the personality during setup or any time from the dashboard.
 
-### 🐸 Mentor — Step-by-step guide
-Patient, ADHD-aware. Slows you down, asks the right question, gives you one next action. Never overwhelms. Use it when understanding matters more than speed.
-
-### 🦊 Shapeshifter — Bold fast creator
-Infers your intent and acts. It already built it before Mentor finished the first question.
-
-Canvas is Shapeshifter's default output — not a chat reply, but a persistent, structured workspace that lives in your vault. Each canvas is composed from 10 block types: rich text, interactive checklists, coloured callout notes, code blocks, links, file tabs, buttons, text inputs, section dividers, and a sandboxed HTML block that can render arbitrary layouts, charts, or custom UI. You ask for a plan; you get a tappable, editable canvas. You ask for a checklist; the items actually check off. The result stays in your vault and every other agent can read it.
-
-### 🐝 Keeper — Personal wiki
-Ingests raw notes and organises them into a linked, searchable knowledge base uinspired by Karpathy and Johnny Decimal structure. Surfaces forgotten knowledge — the stuff you wrote six months ago that's relevant right now.
-
-### 🐦 Tracker — Daily rhythm and reflection
-Brings together everything you need to start or close the day: a weekly phrase to sit with, your calendar, prioritised to-dos, rhythms (daily / weekly / monthly / yearly), and a three-line haiku written fresh each morning.
+| | Persona | Character |
+|---|---|---|
+| 🐸 | **Mentor** | Patient, ADHD-aware. Slows you down. One step, one next action, never a wall of text. |
+| 🦊 | **Shapeshifter** | Bold, fast, a little mischievous. Infers intent and acts — it already built it before Mentor finished the first question. |
+| 🐝 | **Keeper** | Organised, quietly curious. Tends the knowledge vault so you don't have to remember everything yourself. |
+| 🐦 | **Tracker** | Precise and grounding. Holds your day's shape — tasks, calendar, rhythm, reflection. |
 
 <!-- screenshot: four-agents — tabs side by side -->
+
+---
+
+## What each one does
+
+### 🐸 Mentor
+- Asks the right question before touching anything
+- One step at a time — never bundles two concepts into one message
+- Ends every response with exactly one next action
+- `Step X of Y` numbering so progress feels real
+- Canvas only when you ask for it — never by default
+
+### 🦊 Shapeshifter
+- Canvas is the default output — not a chat reply but a persistent, structured workspace saved to your vault
+- 10 composable block types: rich text, interactive checklists, coloured callout notes, code blocks, links, file tabs, buttons, text inputs, section dividers, and a sandboxed HTML block for charts, custom layouts, or anything the other blocks can't express
+- You ask for a plan — you get a tappable, editable canvas. You ask for a checklist — the items actually check off
+- Reads and writes your vault directly: scaffolds projects, runs commands, creates files without waiting for permission
+
+### 🐝 Keeper
+- Drop in raw notes, voice dumps, or rough ideas — Keeper extracts and organises them into the wiki
+- Follows a Johnny Decimal structure (identity, knowledge, projects, areas, relationships, creativity, systems, resources, media, events, questions, archive)
+- Surfaces forgotten knowledge, prioritising older reinforced memories you've likely lost track of
+- Updates existing pages rather than creating duplicates; keeps the index clean
+
+### 🐦 Tracker
+- **Weekly phrase** — a short line to sit with and return to through the week
+- **Calendar** — pulls in Google Calendar events so the day has context and shape
+- **To-dos** — p1 / p2 / p3 priorities; incomplete tasks carry forward automatically
+- **Rhythms** — recurring commitments across any cadence: daily, weekly, monthly, yearly
+- **Haiku** — three lines written fresh each morning as a quiet anchor for the day
+
+<!-- screenshot: tracker-and-shapeshifter — canvas and daily view side by side -->
 
 ---
 
@@ -88,9 +113,19 @@ Then open `http://localhost:3000/install`.
 |---|---|
 | Anthropic | `anthropic:claude-sonnet-4-6` |
 | OpenAI | `openai:gpt-4o` |
-| Ollama / local | `openai-compat:http://localhost:11434/v1:llama3.2` |
+| omlx (local) | `openai-compat:http://localhost:8000/v1:Qwen3.6-35B-A3B-4bit` |
+| Ollama (local) | `openai-compat:http://localhost:11434/v1:llama3.2` |
 
 Change the model any time from the dashboard — no restart needed.
+
+### Local models with omlx
+
+Companions works well with [omlx](https://omlx.dev) — an OpenAI-compatible local inference server optimised for Apple Silicon. On an M1 Max with 32 GB unified memory, `Qwen3.6 35B A3B 4bit` runs comfortably and handles all four agents well. The 4-bit quantised mixture-of-experts architecture keeps the memory footprint tight while preserving reasoning quality.
+
+```env
+DEFAULT_MODEL=openai-compat:http://localhost:8000/v1:Qwen3.6-35B-A3B-4bit
+DEFAULT_MODEL_KEY=your-omlx-api-key
+```
 
 ---
 
