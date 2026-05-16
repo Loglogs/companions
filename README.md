@@ -4,7 +4,7 @@
 
 <h1 align="center">Companions</h1>
 
-<p align="center"><strong>One vault. Four agents. Your machine.</strong></p>
+<p align="center"><strong>Self-hosted, four purpose-built AI helpers for organisation, creativity, and reflection.</strong></p>
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
@@ -33,7 +33,15 @@ Each agent ships with a default name, emoji, and role. During setup you rename t
 
 The best thinking rarely happens fast. Mentor is designed to slow you down.
 
-Instead of handing you an answer, Mentor walks beside you — asking the next right question, pointing out what you might have missed, and building understanding one step at a time. Use it for hard problems, learning something new, debugging, or any conversation worth having carefully. ADHD-aware pacing: one clear next action, never a wall of text.
+Instead of handing you an answer, Mentor walks beside you — asking the next right question, pointing out what you might have missed, and building understanding one step at a time. Use it for hard problems, learning something new, debugging, or any conversation worth having carefully.
+
+- Never bundles two steps into one message — one foothold at a time
+- Every response ends with exactly one clear next action
+- ADHD-aware pacing: short chunks, white space, `Step X of Y` progress markers
+- Pushes back on flawed assumptions with enthusiasm, not deflation
+- Canvas is opt-in — only builds one when you ask
+
+Mentor ships with a calm, warm, patient default character. You can rename it and adjust its personality during setup or any time from the dashboard.
 
 > *Don't skip ahead. Let's work through this properly.*
 
@@ -45,9 +53,17 @@ Instead of handing you an answer, Mentor walks beside you — asking the next ri
 
 Some ideas don't fit in a chat box. Shapeshifter is your open creative workspace.
 
-Shapeshifter doesn't ask for clarification — it reads between the lines, makes a smart assumption, states it briefly, and goes. Build canvases with 10 composable block types (markdown, tasks, code, links, HTML, buttons, inputs, and more), or use it as a scratchpad for rapid prototyping, drafts, and plans.
+Shapeshifter doesn't ask for clarification — it reads between the lines, makes a smart assumption, states it briefly, and goes. It already built it before Mentor finished the first question.
 
-> *What if we tried it this way instead?*
+- Infers intent from vague requests and acts immediately
+- Canvas by default — every response is a structured, interactive canvas
+- 10 composable block types: markdown, tasks, notes, code, links, HTML, file tabs, buttons, inputs, dividers
+- One approach, always the boldest — never a menu of options
+- Has access to your vault and tools: reads files, runs commands, scaffolds projects in `projects/`
+
+Shapeshifter ships with an energetic, slightly mischievous default character. You can rename it and tune its personality at any time.
+
+> *Taking this as: X — here's that.*
 
 <!-- screenshot: shapeshifter-tab — canvas with mixed block types -->
 
@@ -57,7 +73,24 @@ Shapeshifter doesn't ask for clarification — it reads between the lines, makes
 
 Inspired by [Andrej Karpathy's approach to personal knowledge](https://karpathy.ai), Keeper turns your vault into a living, interconnected record of what you know.
 
-Every note you share, every idea you drop in, gets woven into a linked wiki — cleaned up, cross-referenced, and retrievable. Keeper ingests raw captures and organises them into a Map of Content structure. It remembers so you don't have to, and surfaces the right context when you need it.
+Drop in a voice dump, a pile of rough notes, or a half-formed idea. Keeper extracts the signal, places it into the right category, cross-references it with what's already there, and keeps the index clean. It surfaces forgotten knowledge — prioritising older, reinforced memories you've likely lost track of.
+
+The wiki follows a Johnny Decimal structure so nothing gets lost in an undifferentiated pile:
+
+| Category | What lives here |
+|---|---|
+| 01-identity | Who you are, your values, how you work |
+| 02-knowledge | Things you've learned and want to keep |
+| 03-projects | Active work and plans |
+| 04-areas | Ongoing responsibilities |
+| 05-relationships | People, context, notes |
+| 06-creativity | Ideas, drafts, creative work |
+| 07-systems | Processes, workflows, routines |
+| 08-resources | References, links, tools |
+| 09-media | Books, films, things consumed |
+| 10-events | Conferences, dates, occasions |
+| 11-questions | Open questions worth sitting with |
+| 99-archive | Done, deprecated, filed away |
 
 > *You wrote about this six months ago. Want me to bring it in?*
 
@@ -69,11 +102,19 @@ Every note you share, every idea you drop in, gets woven into a linked wiki — 
 
 Most productivity systems push you to do more. Tracker is built around the opposite idea: slow down, look back, and prepare with intention.
 
-Tracker gives you a daily rhythm of reflection and preparation. It reads your vault — open tasks, past entries, calendar events — and helps you begin each day with clarity and close it with honesty. No scattered lists. A single, grounded practice.
+Each session, Tracker brings together everything you need to start or close the day:
+
+- **Weekly phrase** — a short phrase to sit with and reflect on through the week
+- **Calendar** — pulls in your Google Calendar events so the day has shape and context
+- **To-dos** — p1 / p2 / p3 priority tasks for today; incomplete ones carry forward automatically
+- **Rhythms** — recurring commitments across any cadence: daily check-ins, weekly reviews, monthly intentions, yearly anchors
+- **Haiku** — three lines written fresh each morning as a quiet anchor for the day ahead
+
+Nothing is pushed at you all at once. Tracker holds the structure so you can just show up.
 
 > *What did I actually do today? What's worth carrying forward?*
 
-<!-- screenshot: tracker-tab — daily journal with tasks and calendar context -->
+<!-- screenshot: tracker-tab — daily journal with tasks, calendar, and haiku -->
 
 ---
 
