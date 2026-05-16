@@ -45,20 +45,19 @@ Each ships with a default name, emoji, and character. Rename them and tune the p
 
 ## 🐦 Tracker — Daily rhythm and reflection
 
-<table>
-<tr>
-<td width="260" valign="top"><img src="docs/screenshots/Tracker.png" alt="Tracker tab" width="240"></td>
-<td valign="top">
+<p align="center">
+  <img src="docs/screenshots/tracker-haiku.png" alt="Tracker haiku" width="175">
+  &nbsp;
+  <img src="docs/screenshots/tracker-phrase and calendar.png" alt="Tracker phrase and calendar" width="175">
+  &nbsp;
+  <img src="docs/screenshots/tracker todo and rhythms.png" alt="Tracker todos and rhythms" width="175">
+</p>
 
 - **Weekly phrase** — a short line to sit with and return to through the week
 - **Calendar** — pulls in Google Calendar events so the day has context and shape
 - **To-dos** — p1 / p2 / p3 priorities; incomplete tasks carry forward automatically
 - **Rhythms** — recurring commitments across any cadence: daily, weekly, monthly, yearly
 - **Haiku** — three lines written fresh every evening as a reflective practice for the day
-
-</td>
-</tr>
-</table>
 
 ---
 
@@ -70,7 +69,7 @@ Two agents, one shared space. They're opposites by design — Mentor slows you d
 
 <table>
 <tr>
-<td width="260" valign="top"><img src="docs/screenshots/Mentor.png" alt="Chat tab — Mentor and Shapeshifter" width="240"></td>
+<td width="260" valign="top"><img src="docs/screenshots/mentor.png" alt="Chat tab — Mentor and Shapeshifter" width="240"></td>
 <td valign="top">
 
 The Chat tab lets you talk to either. Switch between them at any point.
@@ -119,7 +118,7 @@ The `html` block is where it becomes a playground. Write a self-contained React 
 
 <table>
 <tr>
-<td width="260" valign="top"><img src="docs/screenshots/Keeper-wiki.png" alt="Keeper wiki" width="240"></td>
+<td width="260" valign="top"><img src="docs/screenshots/keeper-wiki.png" alt="Keeper wiki" width="240"></td>
 <td valign="top">
 
 Drop in raw notes, voice dumps, or rough ideas. Keeper extracts the signal, organises it into the wiki, and keeps the index clean. It surfaces forgotten knowledge — prioritising older, reinforced memories you've likely lost track of.
@@ -130,7 +129,7 @@ The wiki follows a Johnny Decimal structure so nothing gets lost in an undiffere
 
 <img src="docs/screenshots/keeper-notes.png" alt="Keeper raw captures" width="180">
 &nbsp;
-<img src="docs/screenshots/Keeper-web.png" alt="Keeper knowledge graph" width="180">
+<img src="docs/screenshots/keeper-web.png" alt="Keeper knowledge graph" width="180">
 
 </td>
 </tr>
