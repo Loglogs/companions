@@ -1,33 +1,40 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, RefreshControl, PanResponder, Platform,
+  ActivityIndicator, RefreshControl, PanResponder, Platform, Modal, TextInput,
 } from 'react-native';
 import Markdown from 'react-native-markdown-display';
+import { WebView } from 'react-native-webview';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useTheme } from '../../lib/theme';
-import { useStore, getPersonaEmoji, getPersonaName, MODE_ACCENTS } from '../../lib/store';
+import { useStore, MODE_ACCENTS, getModeName, getModeEmoji } from '../../lib/store';
 import { apiFetch } from '../../lib/api';
 import { wsService } from '../../lib/ws';
 import SettingsModal from '../../components/SettingsModal';
 
-const SHAPESHIFTER_ACCENT = MODE_ACCENTS.shapeshifter; // '#FF6135'
+const RUSE_ACCENT = MODE_ACCENTS.shapeshifter; // '#FF6135'
 
 // ─── Canvas types ─────────────────────────────────────────────────────────────
 
 interface TaskItem { id: string; text: string; done: boolean }
 interface LinkItem { id: string; label: string; url: string }
+interface TabItem  { id: string; label: string; file: string }
 
 interface CanvasBlock {
   id: string;
-  type: 'markdown' | 'tasks' | 'note' | 'links' | 'code' | 'section' | 'button';
+  type: 'markdown' | 'tasks' | 'note' | 'links' | 'code' | 'section' | 'button' | 'filetabs' | 'input' | 'html';
   content?: string;
   title?: string;
   items?: TaskItem[] | LinkItem[];
+  tabs?: TabItem[];
   color?: 'amber' | 'blue' | 'green' | 'red';
   language?: string;
   label?: string;
+  // button-specific
+  action?: 'chat' | 'file';
+  file?: string;   // vault-relative path, used when action === 'file'
+  height?: number;
 }
 
 interface CanvasData {
@@ -50,14 +57,14 @@ function buildMarkdownStyles(theme: import('../../lib/theme').Theme) {
     strong:      { fontFamily: 'DMSans_700Bold' },
     em:          { fontFamily: 'Lora_400Regular_Italic' },
     hr:          { backgroundColor: theme.border, height: 1, marginVertical: 16 },
-    blockquote:  { backgroundColor: theme.surface, borderLeftColor: SHAPESHIFTER_ACCENT, borderLeftWidth: 3, paddingHorizontal: 12, paddingVertical: 2, marginVertical: 6, borderRadius: 4 },
-    code_inline: { fontFamily: mono, fontSize: 13, backgroundColor: theme.surfaceAlt, color: SHAPESHIFTER_ACCENT, paddingHorizontal: 4, paddingVertical: 2, borderRadius: 4 },
+    blockquote:  { backgroundColor: theme.surface, borderLeftColor: RUSE_ACCENT, borderLeftWidth: 3, paddingHorizontal: 12, paddingVertical: 2, marginVertical: 6, borderRadius: 4 },
+    code_inline: { fontFamily: mono, fontSize: 13, backgroundColor: theme.surfaceAlt, color: RUSE_ACCENT, paddingHorizontal: 4, paddingVertical: 2, borderRadius: 4 },
     fence:       { fontFamily: mono, fontSize: 13, backgroundColor: '#1a1a1a', color: '#e0e0e0', padding: 14, borderRadius: 8, marginVertical: 8 },
     code_block:  { fontFamily: mono, fontSize: 13, backgroundColor: '#1a1a1a', color: '#e0e0e0', padding: 14, borderRadius: 8, marginVertical: 8 },
     bullet_list: { marginVertical: 4 },
     ordered_list:{ marginVertical: 4 },
     list_item:   { marginVertical: 2 },
-    link:        { color: SHAPESHIFTER_ACCENT, textDecorationLine: 'underline' as const },
+    link:        { color: RUSE_ACCENT, textDecorationLine: 'underline' as const },
   };
 }
 
@@ -94,7 +101,7 @@ function TasksBlock({
           onPress={() => onToggle(block.id, item.id, !item.done)}
           activeOpacity={0.7}
         >
-          <View style={[styles.taskCircle, item.done && { backgroundColor: SHAPESHIFTER_ACCENT, borderColor: SHAPESHIFTER_ACCENT }]}>
+          <View style={[styles.taskCircle, item.done && { backgroundColor: RUSE_ACCENT, borderColor: RUSE_ACCENT }]}>
             {item.done ? <Text style={styles.taskCheck}>✓</Text> : null}
           </View>
           <Text style={[styles.taskText, { color: item.done ? theme.textDim : theme.text }, item.done && styles.taskTextDone]}>
@@ -116,13 +123,14 @@ const NOTE_COLORS: Record<string, string> = {
 function NoteBlock({ block, theme }: { block: CanvasBlock; theme: import('../../lib/theme').Theme }) {
   const borderColor = NOTE_COLORS[block.color ?? 'amber'] ?? NOTE_COLORS.amber;
   const bgColor = borderColor + '1F'; // ~12% opacity
+  const mdStyles = buildMarkdownStyles(theme);
   return (
     <View style={[styles.blockContainer, styles.noteBlock, { borderLeftColor: borderColor, backgroundColor: bgColor }]}>
       {block.title ? (
         <Text style={[styles.blockTitle, { color: theme.text }]}>{block.title}</Text>
       ) : null}
       {block.content ? (
-        <Text style={[styles.noteContent, { color: theme.text }]}>{block.content}</Text>
+        <Markdown style={mdStyles}>{block.content}</Markdown>
       ) : null}
     </View>
   );
@@ -137,7 +145,7 @@ function LinksBlock({ block, theme }: { block: CanvasBlock; theme: import('../..
       ) : null}
       {items.map((item) => (
         <View key={item.id} style={styles.linkRow}>
-          <Text style={[styles.linkLabel, { color: SHAPESHIFTER_ACCENT }]}>{item.label} →</Text>
+          <Text style={[styles.linkLabel, { color: RUSE_ACCENT }]}>{item.label} →</Text>
           <Text style={[styles.linkUrl, { color: theme.textDim }]} numberOfLines={1}>{item.url}</Text>
         </View>
       ))}
@@ -171,24 +179,223 @@ function SectionBlock({ block, theme }: { block: CanvasBlock; theme: import('../
 function ButtonBlock({
   block,
   theme,
-  onPress,
+  onChatPress,
 }: {
   block: CanvasBlock;
   theme: import('../../lib/theme').Theme;
-  onPress: () => void;
+  onChatPress: () => void;
 }) {
+  const [fileOpen, setFileOpen] = useState(false);
+  const isFile = block.action === 'file' && !!block.file;
+
   return (
     <View style={[styles.blockContainer, { backgroundColor: theme.surface }]}>
       {block.content ? (
         <Text style={[styles.buttonBlockDesc, { color: theme.textDim }]}>{block.content}</Text>
       ) : null}
       <TouchableOpacity
-        style={[styles.buttonBlockBtn, { backgroundColor: SHAPESHIFTER_ACCENT }]}
-        onPress={onPress}
+        style={[styles.buttonBlockBtn, { backgroundColor: RUSE_ACCENT }]}
+        onPress={isFile ? () => setFileOpen(true) : onChatPress}
         activeOpacity={0.8}
       >
-        <Text style={styles.buttonBlockLabel}>{block.label ?? 'Open chat'}</Text>
+        <Text style={styles.buttonBlockLabel}>{block.label ?? (isFile ? 'Open file' : 'Open chat')}</Text>
       </TouchableOpacity>
+      {isFile && (
+        <FileViewerModal
+          visible={fileOpen}
+          file={block.file!}
+          title={block.label ?? 'File'}
+          theme={theme}
+          onClose={() => setFileOpen(false)}
+        />
+      )}
+    </View>
+  );
+}
+
+function FileViewerModal({
+  visible, file, title, theme, onClose,
+}: {
+  visible: boolean;
+  file: string;
+  title: string;
+  theme: import('../../lib/theme').Theme;
+  onClose: () => void;
+}) {
+  const [content, setContent] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const mdStyles = buildMarkdownStyles(theme);
+
+  useEffect(() => {
+    if (!visible || !file) return;
+    let cancelled = false;
+    setLoading(true);
+    setContent(null);
+    apiFetch(`/wiki/file?path=${encodeURIComponent(file)}`)
+      .then((r) => r.json())
+      .then((data: { content?: string }) => { if (!cancelled) setContent(data.content ?? ''); })
+      .catch(() => { if (!cancelled) setContent('Failed to load file.'); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [visible, file]);
+
+  return (
+    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+      <View style={[styles.fileModalRoot, { backgroundColor: theme.bg }]}>
+        <View style={[styles.fileModalHeader, { borderBottomColor: theme.border }]}>
+          <Text style={[styles.fileModalTitle, { color: theme.text }]} numberOfLines={1}>{title}</Text>
+          <TouchableOpacity onPress={onClose} activeOpacity={0.7} style={styles.fileModalClose}>
+            <Text style={[styles.fileModalCloseLabel, { color: theme.textDim }]}>Done</Text>
+          </TouchableOpacity>
+        </View>
+        <ScrollView style={styles.fileModalScroll} contentContainerStyle={styles.fileModalContent}>
+          {loading ? (
+            <ActivityIndicator color={theme.textDim} style={{ marginTop: 48 }} />
+          ) : content !== null ? (
+            <Markdown style={mdStyles}>{content}</Markdown>
+          ) : null}
+        </ScrollView>
+      </View>
+    </Modal>
+  );
+}
+
+function InputBlock({
+  block,
+  theme,
+  onSave,
+}: {
+  block: CanvasBlock;
+  theme: import('../../lib/theme').Theme;
+  onSave: (blockId: string, text: string) => void;
+}) {
+  const [value, setValue] = useState(block.content ?? '');
+  return (
+    <View style={[styles.blockContainer, { backgroundColor: theme.surface }]}>
+      {block.title ? (
+        <Text style={[styles.blockTitle, { color: theme.text }]}>{block.title}</Text>
+      ) : null}
+      <TextInput
+        style={[
+          styles.inputField,
+          { color: theme.text, borderColor: theme.border, backgroundColor: theme.bg },
+        ]}
+        value={value}
+        onChangeText={setValue}
+        onBlur={() => onSave(block.id, value)}
+        placeholder="Tap to take notes…"
+        placeholderTextColor={theme.textFaint ?? theme.textDim}
+        multiline
+        scrollEnabled={false}
+        textAlignVertical="top"
+      />
+    </View>
+  );
+}
+
+const AUTO_HEIGHT_JS = `
+  (function() {
+    function postHeight() {
+      window.ReactNativeWebView.postMessage(
+        String(document.documentElement.scrollHeight || document.body.scrollHeight)
+      );
+    }
+    postHeight();
+    new MutationObserver(postHeight).observe(document.body, { childList: true, subtree: true, attributes: true });
+  })();
+`;
+
+function HtmlBlock({ block, theme }: { block: CanvasBlock; theme: import('../../lib/theme').Theme }) {
+  const [height, setHeight] = useState<number>(block.height ?? 200);
+
+  const baseStyle = `
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body {
+        background: ${theme.bg};
+        color: ${theme.text};
+        font-family: -apple-system, system-ui, sans-serif;
+        font-size: 15px;
+        line-height: 1.5;
+        padding: 0;
+      }
+    </style>
+  `;
+
+  const html = block.content?.includes('<html')
+    ? block.content.replace('</head>', `${baseStyle}</head>`)
+    : `<!DOCTYPE html><html><head>${baseStyle}</head><body>${block.content ?? ''}</body></html>`;
+
+  return (
+    <View style={[styles.blockContainer, { padding: 0, overflow: 'hidden', height }]}>
+      <WebView
+        source={{ html }}
+        style={{ flex: 1, backgroundColor: 'transparent' }}
+        originWhitelist={[]}
+        javaScriptEnabled
+        domStorageEnabled={false}
+        scrollEnabled={false}
+        injectedJavaScript={block.height ? undefined : AUTO_HEIGHT_JS}
+        onMessage={block.height ? undefined : (e) => {
+          const h = parseInt(e.nativeEvent.data, 10);
+          if (!isNaN(h) && h > 0) setHeight(h);
+        }}
+      />
+    </View>
+  );
+}
+
+function FileTabsBlock({ block, theme }: { block: CanvasBlock; theme: import('../../lib/theme').Theme }) {
+  const tabs = (block.tabs ?? []) as TabItem[];
+  const [activeId, setActiveId] = useState(tabs[0]?.id ?? '');
+  const [content, setContent] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const mdStyles = buildMarkdownStyles(theme);
+
+  useEffect(() => {
+    const tab = tabs.find((t) => t.id === activeId);
+    if (!tab) return;
+    let cancelled = false;
+    setLoading(true);
+    setContent(null);
+    apiFetch(`/wiki/file?path=${encodeURIComponent(tab.file)}`)
+      .then((r) => r.json())
+      .then((data: { content?: string }) => {
+        if (!cancelled) setContent(data.content ?? '');
+      })
+      .catch(() => { if (!cancelled) setContent('Failed to load file.'); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [activeId]);
+
+  return (
+    <View style={[styles.blockContainer, { backgroundColor: theme.surface, padding: 0, overflow: 'hidden' }]}>
+      {/* Tab strip */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabStrip}>
+        {tabs.map((tab) => {
+          const isActive = tab.id === activeId;
+          return (
+            <TouchableOpacity
+              key={tab.id}
+              style={[styles.tabPill, isActive && { borderBottomColor: RUSE_ACCENT, borderBottomWidth: 2 }]}
+              onPress={() => setActiveId(tab.id)}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.tabLabel, { color: isActive ? RUSE_ACCENT : theme.textDim }]}>
+                {tab.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+      {/* File content */}
+      <View style={styles.tabContent}>
+        {loading ? (
+          <ActivityIndicator color={theme.textDim} style={{ marginVertical: 24 }} />
+        ) : content !== null ? (
+          <Markdown style={mdStyles}>{content}</Markdown>
+        ) : null}
+      </View>
     </View>
   );
 }
@@ -201,14 +408,14 @@ function toTitleCase(slug: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-export default function ShapeshifterScreen() {
+export default function RuseScreen() {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const isDark = useStore((s) => s.isDark);
   const toggleTheme = useStore((s) => s.toggleTheme);
   const currentProjectSlug = useStore((s) => s.currentProjectSlug);
-  const personas = useStore((s) => s.personas);
   const setRequestedChatPersona = useStore((s) => s.setRequestedChatPersona);
+  const modes = useStore((s) => s.modes);
 
   const [canvas, setCanvas] = useState<CanvasData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -270,6 +477,30 @@ export default function ShapeshifterScreen() {
     return () => { wsService.removeListener(listener); };
   }, [currentProjectSlug]);
 
+  // Save input block text to server
+  const handleInputSave = useCallback(async (blockId: string, text: string) => {
+    if (!canvas) return;
+    const updatedCanvas: CanvasData = {
+      ...canvas,
+      blocks: canvas.blocks.map((b) =>
+        b.id === blockId ? { ...b, content: text } : b
+      ),
+      updatedAt: new Date().toISOString(),
+    };
+    setCanvas(updatedCanvas);
+    try {
+      await apiFetch('/wiki/file', {
+        method: 'POST',
+        body: JSON.stringify({
+          path: `projects/${currentProjectSlug}/canvas.json`,
+          content: JSON.stringify(updatedCanvas, null, 2),
+        }),
+      });
+    } catch {
+      setCanvas(canvas);
+    }
+  }, [canvas, currentProjectSlug]);
+
   // Toggle a task done/undone and save to server
   const handleTaskToggle = useCallback(async (blockId: string, taskId: string, done: boolean) => {
     if (!canvas) return;
@@ -305,7 +536,7 @@ export default function ShapeshifterScreen() {
     }
   }, [canvas, currentProjectSlug]);
 
-  // Swipe navigation: right → mentor, left → keeper
+  // Swipe navigation: right → saniel, left → hive
   const swipe = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponder: (_, g) =>
@@ -313,9 +544,9 @@ export default function ShapeshifterScreen() {
       onPanResponderRelease: (_, g) => {
         if (Math.abs(g.dx) < 40) return;
         if (g.dx > 0) {
-          router.replace('/(tabs)/mentor');
+          router.replace('/(tabs)/saniel');
         } else {
-          router.replace('/(tabs)/keeper');
+          router.replace('/(tabs)/hive');
         }
       },
     })
@@ -341,12 +572,18 @@ export default function ShapeshifterScreen() {
             key={block.id}
             block={block}
             theme={theme}
-            onPress={() => {
+            onChatPress={() => {
               setRequestedChatPersona('shapeshifter');
-              router.replace('/(tabs)/mentor');
+              router.replace('/(tabs)/saniel');
             }}
           />
         );
+      case 'filetabs':
+        return <FileTabsBlock key={block.id} block={block} theme={theme} />;
+      case 'input':
+        return <InputBlock key={block.id} block={block} theme={theme} onSave={handleInputSave} />;
+      case 'html':
+        return <HtmlBlock key={block.id} block={block} theme={theme} />;
       default:
         return null;
     }
@@ -359,12 +596,12 @@ export default function ShapeshifterScreen() {
         <TouchableOpacity
           onPress={() => {
             setRequestedChatPersona('shapeshifter');
-            router.replace('/(tabs)/mentor');
+            router.replace('/(tabs)/saniel');
           }}
           onLongPress={() => { setSettingsSection('model'); setSettingsVisible(true); }}
           activeOpacity={0.7}
         >
-          <Text style={[styles.headerPersona, { color: SHAPESHIFTER_ACCENT }]}>{`${getPersonaEmoji('shapeshifter', personas)} ${getPersonaName('shapeshifter', personas)}`}</Text>
+          <Text style={[styles.headerPersona, { color: RUSE_ACCENT }]}>{getModeEmoji('shapeshifter', modes)} {getModeName('shapeshifter', modes)}</Text>
         </TouchableOpacity>
         <Text style={[styles.headerProject, { color: theme.textDim }]} numberOfLines={1}>
           {projectName}
@@ -413,7 +650,7 @@ export default function ShapeshifterScreen() {
                 This canvas is empty
               </Text>
               <Text style={[styles.emptyHint, { color: theme.textFaint }]}>
-                Talk to Mentor to start building this space.{'\n'}
+                Talk to {getModeName('mentor', modes)} to start building this space.{'\n'}
                 {projectName !== 'Inbox' ? `Current project: ${projectName}` : 'No project selected.'}
               </Text>
             </View>
@@ -425,10 +662,10 @@ export default function ShapeshifterScreen() {
 
       {/* Chat FAB */}
       <TouchableOpacity
-        style={[styles.fab, { backgroundColor: SHAPESHIFTER_ACCENT }]}
+        style={[styles.fab, { backgroundColor: RUSE_ACCENT }]}
         onPress={() => {
           setRequestedChatPersona('shapeshifter');
-          router.replace('/(tabs)/mentor');
+          router.replace('/(tabs)/saniel');
         }}
         activeOpacity={0.85}
       >
@@ -633,6 +870,57 @@ const styles = StyleSheet.create({
     fontFamily: 'DMSans_700Bold',
     fontSize: 15,
     color: '#fff',
+  },
+  // File viewer modal
+  fileModalRoot: { flex: 1 },
+  fileModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  fileModalTitle: {
+    flex: 1,
+    fontFamily: 'DMSans_700Bold',
+    fontSize: 16,
+  },
+  fileModalClose: { paddingLeft: 16 },
+  fileModalCloseLabel: {
+    fontFamily: 'DMSans_500Medium',
+    fontSize: 15,
+  },
+  fileModalScroll: { flex: 1 },
+  fileModalContent: { padding: 20, paddingBottom: 60 },
+  // File tabs
+  tabStrip: {
+    flexDirection: 'row',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255,255,255,0.08)',
+  },
+  tabPill: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  tabLabel: {
+    fontFamily: 'DMSans_500Medium',
+    fontSize: 13,
+  },
+  tabContent: {
+    padding: 16,
+  },
+  // Input
+  inputField: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 15,
+    fontFamily: 'DMSans_400Regular',
+    lineHeight: 24,
+    minHeight: 100,
   },
   // Section
   sectionBlock: {

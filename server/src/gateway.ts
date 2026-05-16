@@ -40,18 +40,34 @@ import {
   CHAT_MODES,
   isFallbackActive,
   activateFallback,
+  getVisionSession,
+  addVisionListener,
+  removeVisionListener,
 } from "./agent.js";
 import type { AgentSessionEvent } from "@mariozechner/pi-coding-agent";
-import { MODES, MODE_META, type Mode } from "./routes.js";
+import type { ImageContent } from "@mariozechner/pi-ai";
+import { MODES, getModeInfos, type Mode } from "./routes.js";
 import { queryKnowledge } from "./knowledge/query.js";
 import { getLatestCalDigest } from "./cron.js";
 import { createCalendarEvent, updateCalendarEvent, deleteCalendarEvent, type CalEventData } from "./calendar.js";
 
 const HEARTBEAT_MS = 30_000;
-const MAX_PAYLOAD_BYTES = 64 * 1024;
+const MAX_PAYLOAD_BYTES = 20 * 1024 * 1024;
+
+const IMAGE_MIME_PREFIXES = ["image/jpeg", "image/png", "image/gif", "image/webp", "image/heic"];
+const IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic"]);
+
+function isImageFile(fileName?: string, fileMime?: string): boolean {
+  if (fileMime && IMAGE_MIME_PREFIXES.some(p => fileMime.startsWith(p))) return true;
+  if (fileName) {
+    const ext = fileName.slice(fileName.lastIndexOf(".")).toLowerCase();
+    return IMAGE_EXTENSIONS.has(ext);
+  }
+  return false;
+}
 
 type ClientMessage =
-  | { type: "message";     text?: string; project?: string; persona?: "mentor" | "shapeshifter" }
+  | { type: "message";     text?: string; project?: string; persona?: "mentor" | "shapeshifter"; fileName?: string; fileContent?: string; fileMime?: string }
   | { type: "switch_mode"; mode?: string }
   | { type: "abort" };
 
@@ -102,45 +118,62 @@ function makeThinkStripper() {
  * Buffers text between <canvas> and </canvas> tags and returns only visible text.
  * Calls onCanvas with the extracted JSON once the closing tag is found.
  */
-function makeCanvasStripper(onCanvas: (json: string) => void): (chunk: string) => string {
+function makeCanvasStripper(onCanvas: (json: string) => void): { process: (chunk: string) => string; flush: () => string } {
   let buf = '';
   let inside = false;
+  // Hold back enough chars so a "```json\n" fence arriving just before <canvas>
+  // is still in the buffer when we detect the tag and can be stripped.
+  // "```json\n" = 8 chars; use 12 for safety.
+  const HOLD = 12;
 
-  return function process(chunk: string): string {
-    if (!inside) {
-      const combined = buf + chunk;
-      const start = combined.indexOf('<canvas>');
-      if (start === -1) {
-        buf = '';
-        return combined;
+  return {
+    process(chunk: string): string {
+      if (!inside) {
+        buf += chunk;
+        const start = buf.indexOf('<canvas>');
+        if (start === -1) {
+          // No canvas tag yet — emit safely but keep a tail as lookahead
+          const safe = buf.length - HOLD;
+          if (safe <= 0) return '';
+          const out = buf.slice(0, safe);
+          buf = buf.slice(safe);
+          return out;
+        }
+        // Strip any code fence immediately before <canvas>
+        const visible = buf.slice(0, start).replace(/`{3}[a-z]*\n?$/, '');
+        buf = buf.slice(start);
+        inside = true;
+        return visible;
       }
-      // Found start — capture text before the tag and enter canvas mode
-      const visible = combined.slice(0, start);
-      buf = combined.slice(start);
-      inside = true;
-      return visible;
-    }
-    buf += chunk;
-    const end = buf.indexOf('</canvas>');
-    if (end !== -1) {
-      const inner = buf.slice('<canvas>'.length, end);
-      const tail = buf.slice(end + '</canvas>'.length);
+      buf += chunk;
+      const end = buf.indexOf('</canvas>');
+      if (end !== -1) {
+        const inner = buf.slice('<canvas>'.length, end);
+        // Strip any code fence immediately after </canvas>
+        const tail = buf.slice(end + '</canvas>'.length).replace(/^\n?`{3}\n?/, '');
+        buf = '';
+        inside = false;
+        onCanvas(inner.trim());
+        return tail;
+      }
+      return '';
+    },
+    flush(): string {
+      const out = buf;
       buf = '';
       inside = false;
-      onCanvas(inner.trim());
-      return tail;
-    }
-    return ''; // still inside canvas block, don't emit
+      return out;
+    },
   };
 }
 
-function makeCalStripper(onCal: (tag: string, json: string) => void): (chunk: string) => string {
+function makeCalStripper(onCal: (tag: string, json: string) => void): { process: (chunk: string) => string; flush: () => string } {
   let buf = '';
   let insideTag: string | null = null;
   // Longest partial open tag without closing `>`: '<cal_delete' = 11 chars
   const PARTIAL_HOLD = 11;
 
-  function flush(): string {
+  function drain(): string {
     let out = '';
     while (true) {
       if (!insideTag) {
@@ -172,9 +205,18 @@ function makeCalStripper(onCal: (tag: string, json: string) => void): (chunk: st
     }
   }
 
-  return function process(chunk: string): string {
-    buf += chunk;
-    return flush();
+  return {
+    process(chunk: string): string {
+      buf += chunk;
+      return drain();
+    },
+    flush(): string {
+      // Release whatever remains in the hold buffer at end-of-turn
+      const out = buf;
+      buf = '';
+      insideTag = null;
+      return out;
+    },
   };
 }
 
@@ -236,8 +278,9 @@ function handleAgentEvent(
   ws: WebSocket,
   event: AgentSessionEvent,
   stripThink: (s: string) => string,
-  stripCanvas: (s: string) => string,
-  stripCal: (s: string) => string,
+  canvas: { process: (s: string) => string; flush: () => string },
+  cal: { process: (s: string) => string; flush: () => string },
+  getPersona: () => string,
 ): void {
   switch (event.type) {
     case "agent_start":
@@ -252,20 +295,21 @@ function handleAgentEvent(
         // Drop reasoning/thinking deltas — don't forward to client
       } else if (sub?.type === "text_delta" && typeof sub.delta === "string") {
         const thinkStripped = stripThink(sub.delta);
-        const visible = stripCal(stripCanvas(thinkStripped));
+        const visible = cal.process(canvas.process(thinkStripped));
         if (visible) send(ws, { type: "message_update", text: visible });
       }
       break;
     }
 
-    case "agent_end":
-      send(ws, { type: "agent_end" });
-      // Note: we intentionally do NOT reset isFirstTurn here.
-      // Auto-routing should only fire on the first message of a connection
-      // (or after an explicit manual mode switch / new conversation).
-      // Re-routing on every turn boundary would yank users between personas
-      // mid-conversation and lose continuity.
+    case "agent_end": {
+      // Flush lookahead buffers — canvas first (inner), then cal (outer)
+      const canvasTail = canvas.flush();
+      const calTail = cal.flush();
+      const tail = calTail + canvasTail;
+      if (tail) send(ws, { type: "message_update", text: tail });
+      send(ws, { type: "agent_end", persona: getPersona() });
       break;
+    }
 
     default:
       break;
@@ -290,6 +334,7 @@ async function handleClientMessage(
   raw: string,
   onModeSwitch: (mode: Mode) => Promise<void>,
   onProject: (slug: string) => void,
+  setPersona: (p: string) => void = () => {},
 ): Promise<void> {
   let msg: ClientMessage;
   try {
@@ -309,7 +354,7 @@ async function handleClientMessage(
   }
 
   if (msg.type === "message") {
-    if (!msg.text?.trim()) {
+    if (!msg.text?.trim() && !msg.fileContent) {
       send(ws, { type: "error", code: "bad_input", message: "Empty message" });
       return;
     }
@@ -326,21 +371,114 @@ async function handleClientMessage(
         msg.includes("network") || msg.includes("connect");
     };
 
-    let promptText = msg.text;
+    let promptText = msg.text ?? "";
     try {
       // followUp queues behind any in-progress response rather than throwing
       const currentMode = getCurrentMode();
       // Allow client to override persona per-message (e.g. Shapeshifter summoned into Mentor tab)
       const effectivePersona = msg.persona ?? currentMode;
 
+      // ── Vision path: direct Ollama streaming call with think:false ───────────
+      // Bypasses Pi SDK session to avoid gemma4's extended thinking phase,
+      // which blocks the stream until reasoning finishes (can take minutes).
+      if (msg.fileContent && isImageFile(msg.fileName, msg.fileMime)) {
+        const mimeType = msg.fileMime ?? "image/jpeg";
+        const visionPrompt = promptText.trim() || "Describe this image.";
+        console.log(`[gateway] Routing image to vision (direct) (${msg.fileName})`);
+        send(ws, { type: "agent_start" });
+
+        const thinkingInterval = setInterval(() => {
+          send(ws, { type: "agent_thinking" });
+        }, 5_000);
+
+        try {
+          const visionEnv = process.env.VISION_MODEL ?? "";
+          // Parse: openai-compat:http://host:port/v1:model-name (model may contain colons)
+          const visionMatch = visionEnv.match(/^[^:]+:(https?:\/\/.*?\/[^:]*):(.+)$/);
+          if (!visionMatch) throw new Error(`Cannot parse VISION_MODEL: ${visionEnv}`);
+          const baseUrl = visionMatch[1]; // e.g. http://localhost:11434/v1
+          const modelName = visionMatch[2]; // e.g. gemma4:e4b
+          const apiKey = process.env.VISION_MODEL_KEY ?? "ollama";
+
+          const response = await fetch(`${baseUrl}/chat/completions`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({
+              model: modelName,
+              stream: true,
+              think: false,
+              messages: [{
+                role: "user",
+                content: [
+                  { type: "image_url", image_url: { url: `data:${mimeType};base64,${msg.fileContent}` } },
+                  { type: "text", text: visionPrompt },
+                ],
+              }],
+            }),
+          });
+
+          if (!response.ok || !response.body) {
+            throw new Error(`Vision API error: ${response.status}`);
+          }
+
+          let fullText = "";
+          const decoder = new TextDecoder();
+          const reader = response.body.getReader();
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            const chunk = decoder.decode(value, { stream: true });
+            for (const line of chunk.split("\n")) {
+              const trimmed = line.trim();
+              if (!trimmed.startsWith("data: ") || trimmed === "data: [DONE]") continue;
+              try {
+                const parsed = JSON.parse(trimmed.slice(6));
+                const delta = parsed.choices?.[0]?.delta?.content ?? "";
+                if (delta) {
+                  fullText += delta;
+                  send(ws, { type: "message_update", text: delta });
+                }
+              } catch { /* skip malformed SSE lines */ }
+            }
+          }
+
+          send(ws, { type: "agent_end" });
+          console.log(`[gateway] Vision response complete (${fullText.length} chars)`);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          console.error("[gateway] Vision error:", message);
+          send(ws, { type: "error", code: "vision_error", message });
+          send(ws, { type: "agent_end" });
+        } finally {
+          clearInterval(thinkingInterval);
+        }
+        return;
+      }
+
+      // ── Text file: inject content as context block ─────────────────────────
+      if (msg.fileContent && msg.fileName) {
+        const MAX_FILE_CHARS = 40_000;
+        const truncated = msg.fileContent.length > MAX_FILE_CHARS
+          ? msg.fileContent.slice(0, MAX_FILE_CHARS) + "\n\n[File truncated]"
+          : msg.fileContent;
+        promptText = `<file name="${msg.fileName}">\n${truncated}\n</file>\n\n${promptText}`;
+      }
+
+      // ── Regular chat path: Qwen3 session ───────────────────────────────────
       // Prepend persona tag so the shared chat session knows which flavour to use
       if (CHAT_MODES.has(currentMode as any)) {
+        console.log(`[gateway] persona=${effectivePersona} currentMode=${currentMode} msg.persona=${msg.persona}`);
+        setPersona(effectivePersona);
         promptText = `[${effectivePersona}]\n${promptText}`;
       }
 
       if (CHAT_MODES.has(currentMode as any)) {
         try {
-          const { answer, sources } = await queryKnowledge(msg.text, 4);
+          const { answer, sources } = await queryKnowledge(msg.text ?? "", 4);
           const calDigest = getLatestCalDigest();
           const hasWiki = answer && answer !== "No relevant knowledge found.";
 
@@ -354,9 +492,9 @@ async function handleClientMessage(
               if (context) context += "\n\n";
               context += `Calendar (today's upcoming events):\n${calDigest}`;
             }
-            promptText = `[${effectivePersona}]\n<context>\n${context}\n</context>\n\n${msg.text}`;
+            promptText = `[${effectivePersona}]\n<context>\n${context}\n</context>\n\n${promptText}`;
           } else {
-            console.log(`[gateway] No context found for: "${msg.text.slice(0, 60)}"`);
+            console.log(`[gateway] No context found for: "${(msg.text ?? "").slice(0, 60)}"`);
           }
         } catch (err) {
           console.warn(`[gateway] Wiki context lookup failed: ${err}`);
@@ -412,8 +550,21 @@ async function handleClientMessage(
   send(ws, { type: "error", code: "bad_input", message: `Unknown type: ${(msg as any).type}` });
 }
 
+let _wss: WebSocketServer | null = null;
+
+/** Broadcast a fresh hello with current mode names to all connected clients. */
+export function broadcastModes(): void {
+  if (!_wss) return;
+  broadcastAll(_wss, {
+    type: "hello",
+    mode: getCurrentMode(),
+    modes: getModeInfos(),
+  });
+}
+
 export function createGateway(server: Server): WebSocketServer {
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_PAYLOAD_BYTES });
+  _wss = wss;
 
   server.on("upgrade", (req, socket, head) => {
     if (!authenticate(req)) {
@@ -431,7 +582,7 @@ export function createGateway(server: Server): WebSocketServer {
     send(ws, {
       type: "hello",
       mode: trackedMode,
-      modes: Object.values(MODE_META),
+      modes: getModeInfos(),
     });
 
     console.log(`[gateway] Client connected (mode: ${trackedMode}, clients: ${wss.clients.size})`);
@@ -441,24 +592,34 @@ export function createGateway(server: Server): WebSocketServer {
 
     // Register this connection's listener in the current mode's fan-out set
     const stripThink = makeThinkStripper();
-    const stripCanvas = makeCanvasStripper((json) => {
+    const canvas = makeCanvasStripper((json) => {
       processCanvas(json, connectionProjectSlug, wss).catch((err) =>
         console.warn('[gateway] canvas processing error:', err)
       );
     });
-    const stripCal = makeCalStripper((tag, json) => {
+    const cal = makeCalStripper((tag, json) => {
       processCalAction(tag, json, wss).catch((err) =>
         console.warn('[gateway] cal processing error:', err)
       );
     });
-    const listener = (event: AgentSessionEvent) => handleAgentEvent(ws, event, stripThink, stripCanvas, stripCal);
+    let currentPersona = 'mentor';
+    const listener = (event: AgentSessionEvent) => handleAgentEvent(ws, event, stripThink, canvas, cal, () => currentPersona);
     addModeListener(trackedMode, listener);
+    // Vision listener is registered per-prompt in the vision path, not at connection time.
 
-    // Heartbeat — detects dead mobile connections
+    // Heartbeat — terminates dead mobile connections that don't respond to pings.
+    // If the client doesn't pong within HEARTBEAT_MS, close the socket.
+    let isAlive = true;
     const heartbeat = setInterval(() => {
+      if (!isAlive) {
+        console.log("[gateway] Heartbeat timeout — closing dead socket");
+        ws.terminate();
+        return;
+      }
+      isAlive = false;
       if (ws.readyState === WebSocket.OPEN) ws.ping();
     }, HEARTBEAT_MS);
-    ws.on("pong", () => { /* keep-alive confirmed */ });
+    ws.on("pong", () => { isAlive = true; });
 
     const onModeSwitch = async (mode: Mode): Promise<void> => {
       await switchMode(mode);
@@ -471,7 +632,7 @@ export function createGateway(server: Server): WebSocketServer {
     const onProject = (slug: string) => { connectionProjectSlug = slug; };
 
     ws.on("message", (data) => {
-      handleClientMessage(ws, wss, data.toString(), onModeSwitch, onProject).catch((err) => {
+      handleClientMessage(ws, wss, data.toString(), onModeSwitch, onProject, (p) => { currentPersona = p; }).catch((err) => {
         console.error("[gateway] Unhandled error:", err);
       });
     });

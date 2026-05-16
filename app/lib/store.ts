@@ -6,15 +6,9 @@ import { apiFetch } from './api';
 export interface ModeInfo {
   id: string;
   name: string;
+  emoji: string;
   accent: string;
   mascot: string;
-}
-
-export interface PersonaInfo {
-  key: string;
-  displayName: string;
-  emoji: string;
-  slot: number;
 }
 
 export interface Message {
@@ -29,6 +23,8 @@ export interface ConversationMeta {
   id: string;
   startedAt: number;
   title: string;  // first user message truncated to 40 chars
+  folder?: string;
+  project?: string;
 }
 
 export type AgentState = 'idle' | 'thinking' | 'talking';
@@ -51,7 +47,6 @@ interface CompanionStore {
   // Mode
   currentMode: string;
   modes: ModeInfo[];
-  personas: Record<string, PersonaInfo>;
 
   // Theme
   isDark: boolean;
@@ -85,16 +80,15 @@ interface CompanionStore {
   addUserMessage(text: string): void;
   setMode(mode: string): void;
   setModes(modes: ModeInfo[]): void;
-  setPersonas(personas: PersonaInfo[]): void;
-  hydratePersonas(): Promise<void>;
-  syncPersonas(): Promise<void>;
   toggleTheme(): void;
   setIsDark(v: boolean): void;
   toggleAutoRoute(): void;
   setRouteToast(v: string | null): void;
   setCalDigest(v: string | null): void;
+  setCurrentProjectSlugOnly(slug: string): void;
   loadConversations(): Promise<void>;
-  newConversation(): Promise<void>;
+  newConversation(folder?: string): Promise<void>;
+  moveConversation(id: string, folder: string | undefined): Promise<void>;
   loadConversation(id: string): Promise<void>;
   renameConversation(id: string, title: string): Promise<void>;
   deleteConversation(id: string): Promise<void>;
@@ -106,27 +100,12 @@ interface SyncItem {
   messages: Message[];
   meta: ConversationMeta;
 }
-
-const DEFAULT_PERSONAS: Record<string, PersonaInfo> = {
-  mentor: { key: 'mentor', displayName: 'Mentor', emoji: '🐸', slot: 0 },
-  shapeshifter: { key: 'shapeshifter', displayName: 'Shapeshifter', emoji: '🦊', slot: 1 },
-  keeper: { key: 'keeper', displayName: 'Keeper', emoji: '🐝', slot: 2 },
-  tracker: { key: 'tracker', displayName: 'Tracker', emoji: '🐦', slot: 3 },
-};
-
-function toPersonaMap(personas: PersonaInfo[]): Record<string, PersonaInfo> {
-  const next = { ...DEFAULT_PERSONAS };
-  for (const persona of personas) {
-    next[persona.key] = persona;
-  }
-  return next;
-}
 const _syncQueue: SyncItem[] = [];
 let _isSyncing = false;
 
 async function _syncToServer(id: string, messages: Message[], meta: ConversationMeta) {
   try {
-    const project = useStore.getState().currentProjectSlug;
+    const project = meta.project ?? useStore.getState().currentProjectSlug;
     const res = await apiFetch(`/chats/${id}`, {
       method: 'PUT',
       body: JSON.stringify({ messages, meta, project }),
@@ -190,11 +169,10 @@ export const useStore = create<CompanionStore>((set, get) => ({
 
   currentMode: 'mentor',
   modes: [],
-  personas: DEFAULT_PERSONAS,
 
   isDark: true,
 
-  currentProjectSlug: 'inbox',
+  currentProjectSlug: 'general',
 
   requestedChatPersona: null,
   setRequestedChatPersona(v) { set({ requestedChatPersona: v }); },
@@ -289,31 +267,7 @@ export const useStore = create<CompanionStore>((set, get) => ({
 
   setModes(modes) {
     set({ modes });
-  },
-
-  setPersonas(personas) {
-    const mapped = toPersonaMap(personas);
-    set({ personas: mapped });
-    AsyncStorage.setItem('personas', JSON.stringify(Object.values(mapped))).catch(() => {});
-  },
-
-  async hydratePersonas() {
-    try {
-      const raw = await AsyncStorage.getItem('personas');
-      if (!raw) return;
-      const personas = JSON.parse(raw) as PersonaInfo[];
-      set({ personas: toPersonaMap(personas) });
-    } catch {}
-  },
-
-  async syncPersonas() {
-    try {
-      const res = await apiFetch('/api/personas');
-      if (!res.ok) return;
-      const data = await res.json() as { personas?: PersonaInfo[] };
-      const personas = data.personas ?? [];
-      get().setPersonas(personas);
-    } catch {}
+    AsyncStorage.setItem('cachedModes', JSON.stringify(modes)).catch(() => {});
   },
 
   toggleTheme() {
@@ -339,35 +293,57 @@ export const useStore = create<CompanionStore>((set, get) => ({
   },
 
   async setCurrentProject(slug) {
-    set({ currentProjectSlug: slug });
+    set({ currentProjectSlug: slug, activeConversationId: null, messages: [], conversations: [] });
     await AsyncStorage.setItem('current_project_slug', slug).catch(() => {});
+    await AsyncStorage.removeItem('active_conversation_id').catch(() => {});
     await get().loadConversations();
+  },
+
+  setCurrentProjectSlugOnly(slug) {
+    set({ currentProjectSlug: slug });
   },
 
   async loadConversations() {
     // Try server first
     try {
-      // Restore persisted project slug before any API calls
-      const persistedSlug = await AsyncStorage.getItem('current_project_slug');
-      if (persistedSlug) {
-        set({ currentProjectSlug: persistedSlug });
-      }
       const projectSlug = get().currentProjectSlug;
 
       const idxRes = await apiFetch(`/chats?project=${encodeURIComponent(projectSlug)}`);
       if (idxRes.ok) {
         const { conversations }: { conversations: ConversationMeta[] } = await idxRes.json();
 
-        // Determine active id: prefer locally stored active id if it exists on server
+        // Read local active conversation ID and its messages from AsyncStorage.
+        // AsyncStorage is written on every send/receive so it's always at least
+        // as fresh as the server — sometimes ahead if a sync hadn't finished.
         const localActiveId = await AsyncStorage.getItem('active_conversation_id');
-        let activeId = (localActiveId && conversations.find(c => c.id === localActiveId))
+        const localMsgsRaw = localActiveId
+          ? await AsyncStorage.getItem(`conversation_${localActiveId}`)
+          : null;
+        const localMessages: Message[] = localMsgsRaw ? JSON.parse(localMsgsRaw) : [];
+
+        // Build the working conversation list, recovering any local-only conversation
+        // that the server doesn't know about yet (e.g. sync hadn't completed before reload).
+        let workingConvos = [...conversations];
+        if (localActiveId && localMessages.length > 0 && !workingConvos.find(c => c.id === localActiveId)) {
+          const localIndexRaw = await AsyncStorage.getItem('conversation_index');
+          const localIndex: ConversationMeta[] = localIndexRaw ? JSON.parse(localIndexRaw) : [];
+          const localMeta = localIndex.find(c => c.id === localActiveId);
+          if (localMeta) {
+            // Prepend to list and push to server
+            workingConvos = [localMeta, ...workingConvos];
+            _syncToServer(localActiveId, localMessages, localMeta);
+          }
+        }
+
+        // Prefer the locally active conversation; fall back to server's first.
+        let activeId = (localActiveId && workingConvos.find(c => c.id === localActiveId))
           ? localActiveId
-          : conversations[0]?.id ?? null;
+          : workingConvos[0]?.id ?? null;
 
         if (!activeId) {
-          // No conversations on server — create fresh
+          // Nothing anywhere — start fresh
           const id = `conv_${Date.now()}`;
-          const meta: ConversationMeta = { id, startedAt: Date.now(), title: 'New conversation' };
+          const meta: ConversationMeta = { id, startedAt: Date.now(), title: 'New conversation', project: projectSlug };
           const updated = [meta];
           await AsyncStorage.setItem('conversation_index', JSON.stringify(updated));
           await AsyncStorage.setItem('active_conversation_id', id);
@@ -375,28 +351,44 @@ export const useStore = create<CompanionStore>((set, get) => ({
           return;
         }
 
-        // Load messages for active conversation from server
-        const msgsRes = await apiFetch(`/chats/${activeId}?project=${encodeURIComponent(projectSlug)}`);
-        const { messages }: { messages: Message[] } = msgsRes.ok
-          ? await msgsRes.json()
-          : { messages: [] };
+        // Load messages: if local AsyncStorage has messages for the active conversation,
+        // compare with server and use whichever is longer.
+        let messages: Message[] = localMessages;
+        if (activeId !== localActiveId || localMessages.length === 0) {
+          // Active conversation changed (fallback case) — read its local cache
+          const altRaw = await AsyncStorage.getItem(`conversation_${activeId}`);
+          messages = altRaw ? JSON.parse(altRaw) : [];
+        }
+
+        // Also check server — use it only if it's longer than local
+        try {
+          const msgsRes = await apiFetch(`/chats/${activeId}?project=${encodeURIComponent(projectSlug)}`);
+          const serverMessages: Message[] = msgsRes.ok
+            ? ((await msgsRes.json()).messages ?? [])
+            : [];
+          if (serverMessages.length > messages.length) {
+            messages = serverMessages;
+          }
+        } catch { /* keep local */ }
+
+        // Sync local back to server if it was ahead
+        if (localMessages.length > 0 && activeId === localActiveId) {
+          const activeMeta = workingConvos.find(c => c.id === activeId);
+          if (activeMeta) _syncToServer(activeId, messages, activeMeta);
+        }
 
         // Update local cache
-        await AsyncStorage.setItem('conversation_index', JSON.stringify(conversations));
+        await AsyncStorage.setItem('conversation_index', JSON.stringify(workingConvos));
         await AsyncStorage.setItem(`conversation_${activeId}`, JSON.stringify(messages));
         await AsyncStorage.setItem('active_conversation_id', activeId);
 
-        set({ conversations, activeConversationId: activeId, messages });
+        set({ conversations: workingConvos, activeConversationId: activeId, messages });
         return;
       }
     } catch { /* fall through to AsyncStorage */ }
 
     // Fallback: AsyncStorage cache (offline)
     try {
-      const persistedSlugFallback = await AsyncStorage.getItem('current_project_slug');
-      if (persistedSlugFallback) {
-        set({ currentProjectSlug: persistedSlugFallback });
-      }
       const indexRaw = await AsyncStorage.getItem('conversation_index');
       const conversations: ConversationMeta[] = indexRaw ? JSON.parse(indexRaw) : [];
       const activeId = await AsyncStorage.getItem('active_conversation_id');
@@ -417,20 +409,32 @@ export const useStore = create<CompanionStore>((set, get) => ({
     set({ conversations: [meta], activeConversationId: id, messages: [] });
   },
 
-  async newConversation() {
+  async newConversation(folder?: string) {
     const { conversations, activeConversationId, messages } = get();
     // Save current conversation if it has messages
     if (activeConversationId && messages.length > 0) {
       await AsyncStorage.setItem(`conversation_${activeConversationId}`, JSON.stringify(messages)).catch(() => {});
     }
     const id = `conv_${Date.now()}`;
-    const meta: ConversationMeta = { id, startedAt: Date.now(), title: 'New conversation' };
+    const meta: ConversationMeta = { id, startedAt: Date.now(), title: 'New conversation', ...(folder ? { folder } : {}) };
     const updated = [meta, ...conversations].slice(0, 50); // cap at 50
     await AsyncStorage.setItem('conversation_index', JSON.stringify(updated)).catch(() => {});
     await AsyncStorage.setItem('active_conversation_id', id).catch(() => {});
     set({ conversations: updated, activeConversationId: id, messages: [] });
     // New empty conversation — push to server so index is updated
     _syncToServer(id, [], meta);
+  },
+
+  async moveConversation(id: string, folder: string | undefined) {
+    const { conversations, activeConversationId, messages } = get();
+    const updated = conversations.map(c => c.id === id ? { ...c, folder } : c);
+    set({ conversations: updated });
+    await AsyncStorage.setItem('conversation_index', JSON.stringify(updated)).catch(() => {});
+    const meta = updated.find(c => c.id === id);
+    if (meta) {
+      const msgs = id === activeConversationId ? messages : [];
+      _syncToServer(id, msgs, meta);
+    }
   },
 
   async loadConversation(id: string) {
@@ -525,29 +529,29 @@ export const MODE_ACCENTS: Record<string, string> = {
 };
 
 export const MODE_EMOJIS: Record<string, string> = {
-  mentor: '🐸',
-  shapeshifter: '🦊',
+  mentor: '🐢',
+  shapeshifter: '🦞',
   keeper: '🐝',
-  tracker: '🐦',
+  tracker: '🐙',
 };
 
 export const MODE_NAMES: Record<string, string> = {
-  mentor: 'Mentor',
-  shapeshifter: 'Shapeshifter',
-  keeper: 'Keeper',
-  tracker: 'Tracker',
+  mentor: 'Sage',
+  shapeshifter: 'Creato',
+  keeper: 'Loom',
+  tracker: 'Tick',
 };
+
+export function getModeName(mode: string, modes: ModeInfo[]): string {
+  return modes.find(m => m.id === mode)?.name ?? MODE_NAMES[mode] ?? mode;
+}
+
+export function getModeEmoji(mode: string, modes: ModeInfo[]): string {
+  return modes.find(m => m.id === mode)?.emoji ?? MODE_EMOJIS[mode] ?? '';
+}
 
 export function getAccent(mode: string, modes: ModeInfo[]): string {
   const found = modes.find((m) => m.id === mode);
   if (found) return found.accent;
   return MODE_ACCENTS[mode] ?? '#4CAF50';
-}
-
-export function getPersonaName(mode: string, personas?: Record<string, PersonaInfo>): string {
-  return personas?.[mode]?.displayName ?? MODE_NAMES[mode] ?? mode.charAt(0).toUpperCase() + mode.slice(1);
-}
-
-export function getPersonaEmoji(mode: string, personas?: Record<string, PersonaInfo>): string {
-  return personas?.[mode]?.emoji ?? MODE_EMOJIS[mode] ?? '●';
 }

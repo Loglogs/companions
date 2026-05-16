@@ -1,25 +1,39 @@
+import fs from "node:fs";
+import path from "node:path";
 import { Router, type Request, type Response } from "express";
-import { reindex } from "./reindex.js";
 import { queryKnowledge } from "./query.js";
-import { findDuplicates } from "./lint-dupes.js";
 import { synthesiseKnowledge } from "../agent.js";
+
+const VAULT_ROOT = process.env.COMPANION_VAULT
+  ? path.resolve(process.env.COMPANION_VAULT)
+  : path.resolve(process.cwd(), "..");
+
+function walkMd(dir: string): string[] {
+  const results: string[] = [];
+  try {
+    for (const d of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (d.name.startsWith('.')) continue;
+      const abs = path.join(dir, d.name);
+      if (d.isDirectory()) results.push(...walkMd(abs));
+      else if (d.name.endsWith('.md')) results.push(abs);
+    }
+  } catch {}
+  return results;
+}
+
+function tokenise(text: string): Set<string> {
+  return new Set((text.toLowerCase().match(/\b[a-z]{4,}\b/g) ?? []));
+}
+
+function jaccard(a: Set<string>, b: Set<string>): number {
+  let inter = 0;
+  for (const w of a) if (b.has(w)) inter++;
+  const union = a.size + b.size - inter;
+  return union === 0 ? 0 : inter / union;
+}
 
 export function createKnowledgeRouter(): Router {
   const router = Router();
-
-  /**
-   * POST /knowledge/reindex
-   * Walk wiki/ and journal/, embed changed files, update LanceDB.
-   */
-  router.post("/knowledge/reindex", async (_req: Request, res: Response) => {
-    try {
-      const result = await reindex();
-      res.json({ ok: true, ...result });
-    } catch (err) {
-      console.error("[knowledge] reindex error:", err);
-      res.status(500).json({ error: "Reindex failed", detail: String(err) });
-    }
-  });
 
   /**
    * POST /knowledge/query  body: { question: string, topK?: number }
@@ -63,7 +77,7 @@ export function createKnowledgeRouter(): Router {
         return;
       }
 
-      // Synthesise using the same Pi SDK session/model as Saniel/Ruse
+      // Synthesise using the same Pi SDK session/model as Mentor/Shapeshifter
       const answer = await synthesiseKnowledge(result.answer, question);
       res.json({ ok: true, answer, sources: result.chunks });
     } catch (err) {
@@ -74,15 +88,36 @@ export function createKnowledgeRouter(): Router {
 
   /**
    * GET /knowledge/dupes
-   * Find near-duplicate wiki pages by cosine similarity >= 0.88.
+   * Scans wiki/ for near-duplicate pages using Jaccard word-set similarity.
    */
-  router.get("/knowledge/dupes", async (_req: Request, res: Response) => {
+  router.get("/knowledge/dupes", (_req: Request, res: Response) => {
     try {
-      const dupes = await findDuplicates();
+      const wikiDir = path.join(VAULT_ROOT, "wiki");
+      const files = walkMd(wikiDir).filter(f => !f.endsWith('_index.md'));
+
+      const pages = files.map(abs => {
+        const rel = path.relative(VAULT_ROOT, abs);
+        const content = fs.readFileSync(abs, 'utf8');
+        return { path: rel, words: tokenise(content) };
+      });
+
+      const THRESHOLD = 0.5;
+      const dupes: { fileA: string; fileB: string; similarity: number }[] = [];
+
+      for (let i = 0; i < pages.length; i++) {
+        for (let j = i + 1; j < pages.length; j++) {
+          const sim = jaccard(pages[i].words, pages[j].words);
+          if (sim >= THRESHOLD) {
+            dupes.push({ fileA: pages[i].path, fileB: pages[j].path, similarity: Math.round(sim * 100) / 100 });
+          }
+        }
+      }
+
+      dupes.sort((a, b) => b.similarity - a.similarity);
       res.json({ ok: true, dupes });
     } catch (err) {
       console.error("[knowledge] dupes error:", err);
-      res.status(500).json({ error: "Dupe check failed", detail: String(err) });
+      res.status(500).json({ ok: false, error: String(err) });
     }
   });
 

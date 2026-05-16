@@ -1,19 +1,18 @@
 import React, { useRef, useEffect } from 'react';
 import { View, Text, TouchableOpacity, Animated, StyleSheet } from 'react-native';
-import { ModeInfo, getPersonaEmoji, MODE_ACCENTS, useStore } from '../lib/store';
+import { ModeInfo, MODE_EMOJIS, MODE_ACCENTS, useStore } from '../lib/store';
 import { useTheme } from '../lib/theme';
 
 const FALLBACK_MODES: ModeInfo[] = [
-  { id: 'mentor', name: 'Mentor', accent: MODE_ACCENTS['mentor'], mascot: 'frog' },
-  { id: 'shapeshifter',   name: 'Shapeshifter',   accent: MODE_ACCENTS['shapeshifter'],   mascot: 'fox' },
-  { id: 'keeper',   name: 'Keeper',   accent: MODE_ACCENTS['keeper'],   mascot: 'bee' },
-  { id: 'tracker',  name: 'Tracker',  accent: MODE_ACCENTS['tracker'],  mascot: 'bird' },
+  { id: 'mentor',       name: 'Sage',   emoji: '🐸', accent: MODE_ACCENTS['mentor'],       mascot: 'frog' },
+  { id: 'shapeshifter', name: 'Creato', emoji: '🦊', accent: MODE_ACCENTS['shapeshifter'], mascot: 'fox'  },
+  { id: 'keeper',       name: 'Loom',   emoji: '🐝', accent: MODE_ACCENTS['keeper'],       mascot: 'bee'  },
+  { id: 'tracker',      name: 'Tick',   emoji: '🐦', accent: MODE_ACCENTS['tracker'],      mascot: 'bird' },
 ];
 
 function Pill({ mode, isActive, onPress }: { mode: ModeInfo; isActive: boolean; onPress: () => void }) {
   const scale = useRef(new Animated.Value(1)).current;
-  const personas = useStore((s) => s.personas);
-  const emoji = getPersonaEmoji(mode.id, personas);
+  const emoji = mode.emoji || MODE_EMOJIS[mode.id] || '●';
   const theme = useTheme();
 
   return (

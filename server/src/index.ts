@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";
 import cors from "cors";
-import { authVerifyHandler, healthHandler, requireAuth } from "./auth.js";
+import { initKeys, authTokenHandler, requireAuth } from "./auth.js";
 import { createRouter } from "./routes.js";
 import { createGateway } from "./gateway.js";
 import { initAgent } from "./agent.js";
@@ -14,13 +14,26 @@ import { createCalendarRouter, calendarOAuthCallback } from "./calendar.js";
 import { createProvidersRouter } from "./providers.js";
 import { createChatsRouter, migrateToInbox } from "./chats.js";
 import { initCron } from "./cron.js";
-import { getConfig } from "./config.js";
+import { createRhythmsRouter } from "./rhythms.js";
+import { createAdminRouter, pushLog } from "./admin.js";
+import { createInstallRouter } from "./install.js";
 import type { Mode } from "./routes.js";
+
+// Intercept console output into the admin log buffer
+(['log', 'warn', 'error'] as const).forEach((level) => {
+  const orig = (console[level] as (...a: unknown[]) => void).bind(console);
+  (console[level] as (...a: unknown[]) => void) = (...args: unknown[]) => {
+    orig(...args);
+    pushLog({ ts: new Date().toISOString(), level, msg: args.map(String).join(' ') });
+  };
+});
 
 const PORT = Number(process.env.PORT ?? 3000);
 const DEFAULT_MODE: Mode = "mentor";
 
 async function main() {
+  initKeys();
+
   if (!process.env.COMPANION_VAULT) {
     console.warn("[server] WARNING: COMPANION_VAULT is not set. Knowledge indexing will resolve to the wrong directory. Set COMPANION_VAULT in .env.");
   }
@@ -40,30 +53,30 @@ async function main() {
   const webDist = path.resolve(__dirname, '../../web/dist');
   app.use('/app', express.static(webDist));
   app.get('/app/*', (_req, res) => res.sendFile(path.join(webDist, 'index.html')));
+  app.get('/dashboard', (_req, res) => res.sendFile(path.join(webDist, 'dashboard.html')));
+
+  // Install API endpoints must mount before the HTML catch-all for /install/*
+  app.use("/", createInstallRouter());
+  app.get('/install', (_req, res) => res.sendFile(path.join(webDist, 'install.html')));
+  app.get('/install/*', (_req, res) => res.sendFile(path.join(webDist, 'install.html')));
 
   // /ping is unauthenticated — useful for pm2 health checks and monitoring
   app.get("/ping", (_req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
   });
 
-  app.get("/api/health", healthHandler);
-  app.post("/api/auth/verify", authVerifyHandler);
+  app.post("/auth/token", authTokenHandler);
   app.get("/calendar/callback", calendarOAuthCallback);
 
-  app.use("/api", requireAuth, createRouter());
-  app.use("/api", requireAuth, createWikiRouter());
-  app.use("/api", requireAuth, createKnowledgeRouter());
-  app.use("/api", requireAuth, createCalendarRouter());
-  app.use("/api", requireAuth, createProvidersRouter());
-  app.use("/api", requireAuth, createChatsRouter());
-
-  // Legacy non-/api mounts kept temporarily for compatibility with older clients.
-  app.use("/", requireAuth, createRouter());
-  app.use("/", requireAuth, createWikiRouter());
-  app.use("/", requireAuth, createKnowledgeRouter());
-  app.use("/", requireAuth, createCalendarRouter());
-  app.use("/", requireAuth, createProvidersRouter());
-  app.use("/", requireAuth, createChatsRouter());
+  app.use(requireAuth);
+  app.use("/", createRouter());
+  app.use("/", createWikiRouter());
+  app.use("/", createKnowledgeRouter());
+  app.use("/", createCalendarRouter());
+  app.use("/", createProvidersRouter());
+  app.use("/", createChatsRouter());
+  app.use("/", createRhythmsRouter());
+  app.use("/", createAdminRouter());
 
   // JSON error handler — catches any unhandled Express errors (including async throws
   // in route handlers) and returns a JSON response instead of Express's default HTML page.
@@ -79,14 +92,8 @@ async function main() {
   initCron(wss);
 
   server.listen(PORT, () => {
-    const config = getConfig();
-    const publicHost = config.publicHost || "localhost";
     console.log(`[server] Listening on http://0.0.0.0:${PORT}`);
-    console.log(`[server] Public URL: http://${publicHost}:${PORT}`);
-    console.log(`[server] Health: http://${publicHost}:${PORT}/api/health`);
-    console.log(`[server] WebSocket: ws://${publicHost}:${PORT}?token=<opaque-token>`);
-    console.log(`[server] Keep your server/.env private.`);
-    console.log(`[server] Pair another device later with: npm run token:issue -- --label \"iPad\"`);
+    console.log(`[server] WebSocket: ws://0.0.0.0:${PORT}?token=<jwt>`);
     // Auto-migrate legacy chats to inbox on startup
     migrateToInbox().catch((err) => console.warn("[chats] Migration warning:", err));
   });
@@ -115,12 +122,6 @@ process.on("unhandledRejection", (reason) => {
   console.error("[server] Unhandled rejection:", reason);
 });
 
-// Intercept process.exit() to log the caller stack before exiting
-const _originalExit = process.exit.bind(process);
-(process as any).exit = (code?: number) => {
-  console.error("[server] process.exit called with code:", code, new Error().stack);
-  _originalExit(code);
-};
 
 main().catch((err) => {
   console.error("[server] Fatal startup error:", err);

@@ -1,7 +1,7 @@
 import { AppAction, ModeInfo } from './types'
 
 type Dispatch = (a: AppAction) => void
-type GetState = () => { serverUrl: string | null; token: string | null; currentMode: string }
+type GetState = () => { serverUrl: string | null; token: string | null; currentMode: string; streamingText: string }
 
 class WsService {
   private ws: WebSocket | null = null
@@ -63,7 +63,8 @@ class WsService {
         break
       case 'agent_end': {
         const m = g().currentMode
-        d({ type: 'COMMIT_MESSAGE', persona: m === 'mentor' || m === 'shapeshifter' ? m : undefined })
+        const personaMap: Record<string, 'mentor' | 'shapeshifter'> = { mentor: 'mentor', shapeshifter: 'shapeshifter' }
+        d({ type: 'COMMIT_MESSAGE', persona: personaMap[m] })
         d({ type: 'SET_AGENT_STATE', value: 'idle' })
         break
       }
@@ -76,10 +77,14 @@ class WsService {
         }
         break
       case 'cal_digest': d({ type: 'SET_CAL_DIGEST', text: e.text as string }); break
-      case 'error':
+      case 'error': {
+        const errMsg = (e.message as string) || 'Something went wrong'
+        const prefix = g().streamingText.trim() ? '\n\n' : ''
+        d({ type: 'APPEND_TOKEN', text: `${prefix}⚠ ${errMsg}` })
         d({ type: 'COMMIT_MESSAGE' })
         d({ type: 'SET_AGENT_STATE', value: 'idle' })
         break
+      }
     }
   }
 

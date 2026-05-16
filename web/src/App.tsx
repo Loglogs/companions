@@ -15,6 +15,7 @@ export default function App() {
       serverUrl: ref.current.serverUrl,
       token: ref.current.token,
       currentMode: ref.current.currentMode,
+      streamingText: ref.current.streamingText,
     }))
     return () => wsService.disconnect()
   }, [])

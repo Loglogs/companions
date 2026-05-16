@@ -3,21 +3,27 @@ import { useAppState, useAppDispatch, ACCENTS, EMOJIS, NAMES } from '../store'
 import { wsService } from '../ws'
 import { dark, light } from '../theme'
 import MessageList from './MessageList'
-import InputBar from './InputBar'
+import InputBar, { AttachedFile } from './InputBar'
 
-interface Props { persona: 'mentor' | 'shapeshifter'; onSettings(): void }
+interface Props { persona: 'mentor' | 'shapeshifter'; onSettings(): void; onSwitch(): void }
 
-export default function ChatTab({ persona, onSettings }: Props) {
+export default function ChatTab({ persona, onSettings, onSwitch }: Props) {
   const state = useAppState()
   const dispatch = useAppDispatch()
   const theme = state.isDark ? dark : light
   const accent = ACCENTS[persona]
   const isStreaming = state.agentState === 'thinking' || state.agentState === 'talking'
+  const other = persona === 'mentor' ? 'shapeshifter' : 'mentor'
 
-  const handleSend = useCallback((text: string) => {
-    dispatch({ type: 'ADD_USER_MESSAGE', text })
-    wsService.send({ type: 'message', text })
-  }, [dispatch])
+  const serverPersona = persona === 'mentor' ? 'mentor' : 'shapeshifter'
+
+  const handleSend = useCallback((text: string, file?: AttachedFile) => {
+    const isImage = file?.mime.startsWith('image/')
+    const fileIcon = isImage ? '🖼️' : '📄'
+    const displayText = file ? `${text ? text + '\n' : ''}${fileIcon} ${file.name}`.trim() : text
+    dispatch({ type: 'ADD_USER_MESSAGE', text: displayText })
+    wsService.send({ type: 'message', text, persona: serverPersona, fileName: file?.name, fileContent: file?.content, fileMime: file?.mime })
+  }, [dispatch, serverPersona])
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -34,6 +40,15 @@ export default function ChatTab({ persona, onSettings }: Props) {
       <div style={{ flex: 1, overflow: 'hidden' }}>
         <MessageList messages={state.messages} streamingText={state.streamingText}
           agentState={state.agentState} accent={accent} isDark={state.isDark} />
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'flex-start', paddingLeft: 12, paddingTop: 4 }}>
+        <button onClick={onSwitch} style={{
+          background: 'none', border: `1px solid ${theme.border}`, borderRadius: 16,
+          padding: '4px 12px', cursor: 'pointer', fontSize: 13, color: theme.textDim,
+          display: 'inline-flex', alignItems: 'center', gap: 4,
+        }}>
+          Switch to {EMOJIS[other]} {NAMES[other]}
+        </button>
       </div>
       <InputBar accent={accent} isStreaming={isStreaming} onSend={handleSend}
         onAbort={() => wsService.send({ type: 'abort' })} isDark={state.isDark} />

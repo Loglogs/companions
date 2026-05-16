@@ -1,11 +1,12 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useStore, flushSyncQueue } from './store';
 
 type ServerEvent =
-  | { type: 'hello'; mode: string; modes: Array<{ id: string; name: string; accent: string; mascot: string }> }
+  | { type: 'hello'; mode: string; modes: Array<{ id: string; name: string; emoji: string; accent: string; mascot: string }> }
   | { type: 'agent_start' }
   | { type: 'agent_thinking' }
   | { type: 'message_update'; text: string }
-  | { type: 'agent_end' }
+  | { type: 'agent_end'; persona?: string }
   | { type: 'mode_changed'; mode: string; auto?: boolean }
   | { type: 'cal_digest'; text: string }
   | { type: 'error'; code: string; message: string }
@@ -26,7 +27,7 @@ class WsService {
   private shouldConnect = false;
   private isConnecting = false;
   private rawListeners: Set<RawListener> = new Set();
-  private lastSentPersona: 'mentor' | 'shapeshifter' = 'mentor';
+  private pendingPersona: 'mentor' | 'shapeshifter' | null = null;
 
   addListener(fn: RawListener): void {
     this.rawListeners.add(fn);
@@ -53,7 +54,7 @@ class WsService {
 
   send(msg: ClientMessage) {
     if (msg.type === 'message' && msg.persona) {
-      this.lastSentPersona = msg.persona;
+      this.pendingPersona = msg.persona;
     }
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg));
@@ -62,7 +63,7 @@ class WsService {
 
   private _connect() {
     if (this.isConnecting) return;
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) return;
+    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) return;
     const { serverUrl, token } = useStore.getState();
     if (!serverUrl || !token) return;
 
@@ -73,12 +74,21 @@ class WsService {
       const ws = new WebSocket(url);
       this.ws = ws;
 
-      ws.onopen = () => {
+      ws.onopen = async () => {
         this.isConnecting = false;
         this._clearReconnect();
         const store = useStore.getState();
         store.setConnected(true);
-        flushSyncQueue();
+        // Flush any queued messages to the server BEFORE reloading history.
+        // Without this await, loadConversations races against the flush and
+        // can overwrite in-memory messages with stale server data.
+        await flushSyncQueue();
+        // Restore the persisted project slug before loading conversations so the
+        // correct project's history is fetched on startup/reconnect.
+        const persistedSlug = await AsyncStorage.getItem('current_project_slug').catch(() => null);
+        if (persistedSlug) {
+          useStore.getState().setCurrentProjectSlugOnly(persistedSlug);
+        }
         // Always reload conversation history on every new connection so that
         // post-server-change reconnects pick up fresh history from the active server.
         store.loadConversations();
@@ -128,6 +138,7 @@ class WsService {
         break;
       case 'agent_start':
         store.setAgentState('thinking');
+        useStore.setState({ streamingText: '' });
         break;
       case 'agent_thinking':
         store.setAgentState('thinking');
@@ -137,7 +148,8 @@ class WsService {
         store.appendStreamingToken(event.text);
         break;
       case 'agent_end':
-        store.commitStreamingMessage(this.lastSentPersona);
+        store.commitStreamingMessage((event.persona as 'mentor' | 'shapeshifter') ?? this.pendingPersona ?? 'mentor');
+        this.pendingPersona = null;
         store.setAgentState('idle');
         break;
       case 'mode_changed':
@@ -152,9 +164,8 @@ class WsService {
         break;
       case 'error': {
         const errMsg = event.message || 'Something went wrong';
-        if (!store.streamingText.trim()) {
-          store.appendStreamingToken(`⚠ ${errMsg}`);
-        }
+        const prefix = store.streamingText.trim() ? '\n\n' : '';
+        store.appendStreamingToken(`${prefix}⚠ ${errMsg}`);
         store.commitStreamingMessage(store.currentMode as 'mentor' | 'shapeshifter' | undefined);
         store.setAgentState('idle');
         break;
@@ -174,11 +185,12 @@ class WsService {
 
   private _scheduleReconnect() {
     this._clearReconnect();
+    const delay = 3000 + Math.random() * 2000;
     this.reconnectTimer = setTimeout(() => {
       if (this.shouldConnect) {
         this._connect();
       }
-    }, 4000);
+    }, delay);
   }
 
   private _clearReconnect() {

@@ -9,7 +9,7 @@ import { router } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import { useTheme } from '../lib/theme';
 import { apiFetch } from '../lib/api';
-import { useStore, ConversationMeta } from '../lib/store';
+import { useStore, ConversationMeta, MODE_ACCENTS, getModeName } from '../lib/store';
 import { wsService } from '../lib/ws';
 
 const DANGER = '#ff453a';
@@ -50,15 +50,39 @@ export default function SettingsModal({ visible, onClose, section }: Props) {
   const theme = useTheme();
 
   const conversations = useStore((s) => s.conversations);
+  const modes = useStore((s) => s.modes);
   const activeConversationId = useStore((s) => s.activeConversationId);
   const newConversation = useStore((s) => s.newConversation);
   const loadConversation = useStore((s) => s.loadConversation);
   const renameConversation = useStore((s) => s.renameConversation);
   const deleteConversation = useStore((s) => s.deleteConversation);
   const clearAllHistory = useStore((s) => s.clearAllHistory);
+  const moveConversation = useStore((s) => s.moveConversation);
 
   const [renameTargetId, setRenameTargetId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
+
+  // Folder UI state
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
+  const [newFolderName, setNewFolderName] = useState('');
+  const [showNewFolder, setShowNewFolder] = useState(false);
+  const [newConvoFolder, setNewConvoFolder] = useState<string | undefined>(undefined);
+  const [showNewConvoFolderPicker, setShowNewConvoFolderPicker] = useState(false);
+
+  const toggleFolder = (folder: string) => {
+    setExpandedFolders(prev => {
+      const next = new Set(prev);
+      next.has(folder) ? next.delete(folder) : next.add(folder);
+      return next;
+    });
+  };
+
+  // Derive folder list and grouped conversations
+  const folders = Array.from(
+    new Set(conversations.map(c => c.folder).filter((f): f is string => !!f))
+  ).sort();
+  const byFolder = (folder: string) => conversations.filter(c => c.folder === folder);
+  const unfiled = conversations.filter(c => !c.folder);
 
   const [providers, setProviders] = useState<Record<string, ProviderInfo>>({});
   const [chatModel, setChatModel] = useState<{ provider: string; modelId: string } | null>(null);
@@ -211,6 +235,70 @@ export default function SettingsModal({ visible, onClose, section }: Props) {
 
   const localProviders = Object.entries(providers).filter(([id]) => !CLOUD_PROVIDER_IDS.has(id));
 
+  // ── Conversation row renderer ────────────────────────────────────────────
+  const renderConvo = (c: ConversationMeta) => {
+    const isActive = c.id === activeConversationId;
+    const isRenaming = renameTargetId === c.id;
+    return (
+      <View key={c.id} style={[styles.convoRow, { borderTopColor: theme.border }]}>
+        <TouchableOpacity
+          style={styles.convoRowMain}
+          activeOpacity={isActive ? 1 : 0.7}
+          onPress={() => { if (!isRenaming && !isActive) { loadConversation(c.id); onClose(); } }}
+        >
+          <View style={styles.convoRowHeader}>
+            <Text style={[styles.convoDate, { color: theme.textFaint }]}>{formatConvoDate(c.startedAt)}</Text>
+            {isActive && <Text style={[styles.convoBadge, { color: MODE_ACCENTS.mentor }]}>current</Text>}
+          </View>
+          {isRenaming ? (
+            <TextInput
+              style={[styles.convoRenameInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.inputBg }]}
+              value={renameDraft}
+              onChangeText={setRenameDraft}
+              onSubmitEditing={() => { if (renameDraft.trim()) renameConversation(c.id, renameDraft.trim()); setRenameTargetId(null); }}
+              onBlur={() => { if (renameDraft.trim()) renameConversation(c.id, renameDraft.trim()); setRenameTargetId(null); }}
+              autoFocus returnKeyType="done" selectTextOnFocus
+            />
+          ) : (
+            <Text style={[styles.convoTitle, { color: isActive ? theme.textDim : theme.text }]} numberOfLines={1}>
+              {c.title}
+            </Text>
+          )}
+        </TouchableOpacity>
+        <View style={styles.convoActions}>
+          <TouchableOpacity
+            style={styles.convoActionBtn} activeOpacity={0.7}
+            onPress={() => { setRenameTargetId(c.id); setRenameDraft(c.title); }}
+          >
+            <Text style={[styles.convoActionLabel, { color: theme.textDim }]}>✎</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.convoActionBtn} activeOpacity={0.7}
+            onPress={() => {
+              const options = [
+                ...folders.filter(f => f !== c.folder).map(f => ({
+                  text: `Move to “${f}”`,
+                  onPress: () => moveConversation(c.id, f),
+                })),
+                ...(c.folder ? [{ text: 'Remove from folder', onPress: () => moveConversation(c.id, undefined) }] : []),
+                { text: 'Delete', style: 'destructive' as const, onPress: () =>
+                  Alert.alert('Delete conversation', `“${c.title}” will be permanently deleted.`, [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Delete', style: 'destructive', onPress: () => deleteConversation(c.id) },
+                  ])
+                },
+                { text: 'Cancel', style: 'cancel' as const },
+              ];
+              Alert.alert(c.title, undefined, options);
+            }}
+          >
+            <Text style={[styles.convoActionLabel, { color: theme.textDim }]}>⋯</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  };
+
   // ─────────────────────────────────────────────────────────────────────────
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
@@ -238,91 +326,137 @@ export default function SettingsModal({ visible, onClose, section }: Props) {
             {(!section || section === 'history') && (<>
             <Text style={[styles.sectionLabel, { color: theme.textDim }]}>CONVERSATIONS</Text>
             <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-              {/* New conversation */}
+
+              {/* New conversation — with optional folder picker */}
               <TouchableOpacity
                 style={styles.providerRow}
                 activeOpacity={0.7}
-                onPress={() => { newConversation(); onClose(); }}
+                onPress={() => setShowNewConvoFolderPicker(v => !v)}
               >
                 <Text style={[styles.providerName, { color: theme.text }]}>✏️  New conversation</Text>
+                <Text style={[styles.action, { color: theme.textDim }]}>
+                  {newConvoFolder ? `📁 ${newConvoFolder}` : 'No folder'} ▾
+                </Text>
               </TouchableOpacity>
 
-              {/* Conversation history */}
+              {/* Folder picker for new conversation */}
+              {showNewConvoFolderPicker && (
+                <View style={[styles.folderPicker, { backgroundColor: theme.surfaceAlt, borderTopColor: theme.border }]}>
+                  <TouchableOpacity
+                    style={styles.folderPickerRow}
+                    onPress={() => { setNewConvoFolder(undefined); setShowNewConvoFolderPicker(false); newConversation(undefined); onClose(); }}
+                  >
+                    <Text style={[styles.folderPickerLabel, { color: theme.text }]}>No folder</Text>
+                    {!newConvoFolder && <Text style={{ color: MODE_ACCENTS.mentor }}>✓</Text>}
+                  </TouchableOpacity>
+                  {folders.map(f => (
+                    <TouchableOpacity
+                      key={f}
+                      style={[styles.folderPickerRow, { borderTopColor: theme.border, borderTopWidth: StyleSheet.hairlineWidth }]}
+                      onPress={() => { setNewConvoFolder(f); setShowNewConvoFolderPicker(false); newConversation(f); onClose(); }}
+                    >
+                      <Text style={[styles.folderPickerLabel, { color: theme.text }]}>📁 {f}</Text>
+                      {newConvoFolder === f && <Text style={{ color: MODE_ACCENTS.mentor }}>✓</Text>}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+
+              {/* New folder */}
+              <View style={[styles.divider, { backgroundColor: theme.border }]} />
+              <TouchableOpacity
+                style={styles.providerRow}
+                activeOpacity={0.7}
+                onPress={() => setShowNewFolder(v => !v)}
+              >
+                <Text style={[styles.providerName, { color: theme.text }]}>📁  New folder</Text>
+                <Text style={[styles.action, { color: theme.textDim }]}>{showNewFolder ? '↑' : '+'}</Text>
+              </TouchableOpacity>
+              {showNewFolder && (
+                <View style={[styles.keyPanel, { borderTopColor: theme.border }]}>
+                  <TextInput
+                    style={[styles.keyInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.inputBg }]}
+                    value={newFolderName}
+                    onChangeText={setNewFolderName}
+                    placeholder="Folder name…"
+                    placeholderTextColor={theme.textFaint}
+                    autoFocus
+                    returnKeyType="done"
+                    onSubmitEditing={() => {
+                      const name = newFolderName.trim().toLowerCase().replace(/\s+/g, '-');
+                      if (name) {
+                        // Folder is created implicitly when a conversation is moved/created into it
+                        setNewConvoFolder(name);
+                        newConversation(name);
+                        setNewFolderName('');
+                        setShowNewFolder(false);
+                        setExpandedFolders(prev => new Set([...prev, name]));
+                        onClose();
+                      }
+                    }}
+                  />
+                  <View style={styles.keyActions}>
+                    <TouchableOpacity
+                      onPress={() => {
+                        const name = newFolderName.trim().toLowerCase().replace(/\s+/g, '-');
+                        if (name) {
+                          setNewConvoFolder(name);
+                          newConversation(name);
+                          setNewFolderName('');
+                          setShowNewFolder(false);
+                          setExpandedFolders(prev => new Set([...prev, name]));
+                          onClose();
+                        }
+                      }}
+                      style={[styles.saveBtn, { opacity: newFolderName.trim() ? 1 : 0.4 }]}
+                      disabled={!newFolderName.trim()}
+                    >
+                      <Text style={styles.saveBtnLabel}>Create + open</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+
+              {/* Folder tree */}
               {conversations.length > 0 && (
                 <>
                   <View style={[styles.divider, { backgroundColor: theme.border }]} />
-                  <Text style={[styles.convoSectionTitle, { color: theme.textDim }]}>History</Text>
-                  {conversations.map((c) => {
-                    const isActive = c.id === activeConversationId;
-                    const isRenaming = renameTargetId === c.id;
+
+                  {/* Folders */}
+                  {folders.map(folder => {
+                    const isOpen = expandedFolders.has(folder);
+                    const folderConvos = byFolder(folder);
                     return (
-                      <View key={c.id} style={[styles.convoRow, { borderTopColor: theme.border }]}>
+                      <View key={folder}>
                         <TouchableOpacity
-                          style={styles.convoRowMain}
-                          activeOpacity={isActive ? 1 : 0.7}
-                          onPress={() => {
-                            if (isRenaming) return;
-                            if (!isActive) { loadConversation(c.id); onClose(); }
-                          }}
+                          style={[styles.folderRow, { borderTopColor: theme.border }]}
+                          onPress={() => toggleFolder(folder)}
+                          activeOpacity={0.7}
                         >
-                          <View style={styles.convoRowHeader}>
-                            <Text style={[styles.convoDate, { color: theme.textFaint }]}>{formatConvoDate(c.startedAt)}</Text>
-                            {isActive && <Text style={[styles.convoBadge, { color: '#4CAF50' }]}>current</Text>}
-                          </View>
-                          {isRenaming ? (
-                            <TextInput
-                              style={[styles.convoRenameInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.inputBg }]}
-                              value={renameDraft}
-                              onChangeText={setRenameDraft}
-                              onSubmitEditing={() => {
-                                if (renameDraft.trim()) renameConversation(c.id, renameDraft.trim());
-                                setRenameTargetId(null);
-                              }}
-                              onBlur={() => {
-                                if (renameDraft.trim()) renameConversation(c.id, renameDraft.trim());
-                                setRenameTargetId(null);
-                              }}
-                              autoFocus
-                              returnKeyType="done"
-                              selectTextOnFocus
-                            />
-                          ) : (
-                            <Text style={[styles.convoTitle, { color: isActive ? theme.textDim : theme.text }]} numberOfLines={1}>
-                              {c.title}
-                            </Text>
-                          )}
+                          <Text style={[styles.folderRowLabel, { color: theme.text }]}>
+                            {isOpen ? '▾' : '▸'} 📁 {folder}
+                          </Text>
+                          <Text style={[styles.folderRowCount, { color: theme.textFaint }]}>
+                            {folderConvos.length}
+                          </Text>
                         </TouchableOpacity>
-                        <View style={styles.convoActions}>
-                          <TouchableOpacity
-                            style={styles.convoActionBtn}
-                            activeOpacity={0.7}
-                            onPress={() => {
-                              setRenameTargetId(c.id);
-                              setRenameDraft(c.title);
-                            }}
-                          >
-                            <Text style={[styles.convoActionLabel, { color: theme.textDim }]}>✎</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={styles.convoActionBtn}
-                            activeOpacity={0.7}
-                            onPress={() =>
-                              Alert.alert(
-                                'Delete conversation',
-                                `"${c.title}" will be permanently deleted.`,
-                                [
-                                  { text: 'Cancel', style: 'cancel' },
-                                  { text: 'Delete', style: 'destructive', onPress: () => deleteConversation(c.id) },
-                                ],
-                              )
-                            }
-                          >
-                            <Text style={[styles.convoActionLabel, { color: DANGER }]}>🗑</Text>
-                          </TouchableOpacity>
-                        </View>
+                        {isOpen && folderConvos.map(c => renderConvo(c))}
                       </View>
                     );
                   })}
+
+                  {/* Unfiled */}
+                  {unfiled.length > 0 && (
+                    <View>
+                      {folders.length > 0 && (
+                        <View style={[styles.folderRow, { borderTopColor: theme.border }]}>
+                          <Text style={[styles.folderRowLabel, { color: theme.textDim }]}>Unfiled</Text>
+                          <Text style={[styles.folderRowCount, { color: theme.textFaint }]}>{unfiled.length}</Text>
+                        </View>
+                      )}
+                      {unfiled.map(c => renderConvo(c))}
+                    </View>
+                  )}
                 </>
               )}
 
@@ -331,10 +465,7 @@ export default function SettingsModal({ visible, onClose, section }: Props) {
               <TouchableOpacity
                 style={styles.providerRow}
                 activeOpacity={0.7}
-                onPress={() => {
-                  clearAllHistory();
-                  onClose();
-                }}
+                onPress={() => { clearAllHistory(); onClose(); }}
               >
                 <Text style={[styles.providerName, { color: DANGER }]}>🗑  Clear all history</Text>
               </TouchableOpacity>
@@ -493,7 +624,7 @@ export default function SettingsModal({ visible, onClose, section }: Props) {
                 activeOpacity={0.7}
                 onPress={() => setChatPickerOpen((v) => !v)}
               >
-                <Text style={[styles.providerName, { color: theme.text }]}>Mentor & Shapeshifter</Text>
+                <Text style={[styles.providerName, { color: theme.text }]}>{getModeName('mentor', modes)} & {getModeName('shapeshifter', modes)}</Text>
                 <View style={styles.modelRight}>
                   <Text style={[styles.modelLabel, { color: theme.textDim }]} numberOfLines={1}>
                     {chatModel ? `${chatModel.provider} / ${chatModel.modelId}` : 'default'}
@@ -557,7 +688,7 @@ export default function SettingsModal({ visible, onClose, section }: Props) {
                 activeOpacity={0.7}
                 onPress={() => {
                   Alert.alert(
-                    'Reconnect / Switch server',
+                    'Change server',
                     'This will disconnect and take you back to the setup screen.',
                     [
                       { text: 'Cancel', style: 'cancel' },
@@ -577,7 +708,7 @@ export default function SettingsModal({ visible, onClose, section }: Props) {
                   );
                 }}
               >
-                <Text style={[styles.providerName, { color: DANGER }]}>Reconnect / Switch server…</Text>
+                <Text style={[styles.providerName, { color: DANGER }]}>Change server…</Text>
               </TouchableOpacity>
             </View>
             </>)}
@@ -719,6 +850,39 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   convoTitle: {
+    fontFamily: 'DMSans_400Regular',
+    fontSize: 14,
+  },
+  // Folder tree
+  folderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  folderRowLabel: {
+    fontFamily: 'DMSans_700Bold',
+    fontSize: 14,
+    flex: 1,
+  },
+  folderRowCount: {
+    fontFamily: 'DMSans_400Regular',
+    fontSize: 12,
+  },
+  folderPicker: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingVertical: 4,
+  },
+  folderPickerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+  },
+  folderPickerLabel: {
     fontFamily: 'DMSans_400Regular',
     fontSize: 14,
   },

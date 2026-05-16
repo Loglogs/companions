@@ -98,6 +98,35 @@ function reducer(state: AppState, action: AppAction): AppState {
       localStorage.removeItem('messages')
       return { ...state, conversations: updated, activeConversationId: action.meta.id, messages: [], streamingText: '' }
     }
+    case 'RENAME_CONVERSATION': {
+      const updated = state.conversations.map(c =>
+        c.id === action.id ? { ...c, title: action.title } : c
+      )
+      localStorage.setItem('conversation_index', JSON.stringify(updated))
+      return { ...state, conversations: updated }
+    }
+    case 'DELETE_CONVERSATION': {
+      const updated = state.conversations.filter(c => c.id !== action.id)
+      localStorage.setItem('conversation_index', JSON.stringify(updated))
+      localStorage.removeItem(`conversation_${action.id}`)
+      const newActiveId = state.activeConversationId === action.id
+        ? (updated[0]?.id ?? null) : state.activeConversationId
+      if (newActiveId !== state.activeConversationId) {
+        if (newActiveId) localStorage.setItem('active_conversation_id', newActiveId)
+        else localStorage.removeItem('active_conversation_id')
+        const messages: Message[] = newActiveId
+          ? JSON.parse(localStorage.getItem(`conversation_${newActiveId}`) || '[]') : []
+        return { ...state, conversations: updated, activeConversationId: newActiveId, messages }
+      }
+      return { ...state, conversations: updated }
+    }
+    case 'MOVE_CONVERSATION': {
+      const updated = state.conversations.map(c =>
+        c.id === action.id ? { ...c, folder: action.folder } : c
+      )
+      localStorage.setItem('conversation_index', JSON.stringify(updated))
+      return { ...state, conversations: updated }
+    }
     default: return state
   }
 }
@@ -202,4 +231,33 @@ export async function clearAllHistory(
 ): Promise<void> {
   apiFetch(serverUrl, token, '/chats', { method: 'DELETE' }).catch(() => {})
   dispatch({ type: 'CLEAR_HISTORY' })
+}
+
+export async function renameConversation(
+  dispatch: React.Dispatch<AppAction>,
+  serverUrl: string,
+  token: string,
+  id: string,
+  title: string
+): Promise<void> {
+  dispatch({ type: 'RENAME_CONVERSATION', id, title })
+  apiFetch(serverUrl, token, `/chats/${id}/rename`, { method: 'POST', body: JSON.stringify({ title }) }).catch(() => {})
+}
+
+export async function deleteConversation(
+  dispatch: React.Dispatch<AppAction>,
+  serverUrl: string,
+  token: string,
+  id: string
+): Promise<void> {
+  dispatch({ type: 'DELETE_CONVERSATION', id })
+  apiFetch(serverUrl, token, `/chats/${id}`, { method: 'DELETE' }).catch(() => {})
+}
+
+export async function moveConversation(
+  dispatch: React.Dispatch<AppAction>,
+  id: string,
+  folder: string | undefined
+): Promise<void> {
+  dispatch({ type: 'MOVE_CONVERSATION', id, folder })
 }

@@ -35,8 +35,8 @@ export default function Main() {
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: theme.bg, position: 'relative' }}>
       <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
         {state.activeTab === 'tracker' && <TrackerTab />}
-        {state.activeTab === 'mentor' && <ChatTab persona="mentor" onSettings={() => setSettingsOpen(true)} />}
-        {state.activeTab === 'shapeshifter' && <ChatTab persona="shapeshifter" onSettings={() => setSettingsOpen(true)} />}
+        {state.activeTab === 'mentor' && <ChatTab persona="mentor" onSettings={() => setSettingsOpen(true)} onSwitch={() => switchTab('shapeshifter')} />}
+        {state.activeTab === 'shapeshifter' && <ChatTab persona="shapeshifter" onSettings={() => setSettingsOpen(true)} onSwitch={() => switchTab('mentor')} />}
         {state.activeTab === 'keeper' && <KeeperTab />}
         <SleepingOverlay visible={!state.connected} />
       </div>

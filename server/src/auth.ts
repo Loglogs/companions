@@ -1,162 +1,124 @@
+/**
+ * auth.ts
+ *
+ * RS256 JWT authentication.
+ *
+ * - Generates an RSA key pair on first run, stored at ~/.companion/keys/
+ * - POST /auth/token: exchange AUTH_SECRET for a 30-day JWT
+ * - verifyToken(token): validates a JWT and returns the decoded payload
+ */
+
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
-import crypto from "node:crypto";
+import os from "node:os";
+import jwt from "jsonwebtoken";
 import type { Request, Response, NextFunction } from "express";
 
-const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../");
-const TOKENS_PATH = path.join(PROJECT_ROOT, "server", "data", "tokens.json");
-const PACKAGE_JSON_PATH = path.join(PROJECT_ROOT, "server", "package.json");
-const LAST_SEEN_DEBOUNCE_MS = 60_000;
+const KEYS_DIR = path.join(os.homedir(), ".companion", "keys");
+const PRIVATE_KEY_PATH = path.join(KEYS_DIR, "private.pem");
+const PUBLIC_KEY_PATH = path.join(KEYS_DIR, "public.pem");
 
-const lastSeenWrites = new Map<string, number>();
+let privateKey: string;
+let publicKey: string;
 
-export type TokenEntry = {
-  id: string;
-  token: string;
-  label: string;
-  createdAt: string;
-  lastSeenAt: string | null;
-  revokedAt: string | null;
-};
-
-export type TokenStore = {
-  tokens: TokenEntry[];
-};
-
-function atomicWrite(filePath: string, content: string): void {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  const tmpPath = `${filePath}.tmp`;
-  const fd = fs.openSync(tmpPath, "w");
-  try {
-    fs.writeFileSync(fd, content, "utf8");
-    fs.fsyncSync(fd);
-  } finally {
-    fs.closeSync(fd);
+/**
+ * Load or generate the RSA key pair.
+ * Called once during server startup.
+ */
+export function initKeys(): void {
+  if (!fs.existsSync(KEYS_DIR)) {
+    fs.mkdirSync(KEYS_DIR, { recursive: true });
   }
-  fs.renameSync(tmpPath, filePath);
-}
 
-export function readTokenStore(): TokenStore {
-  try {
-    return JSON.parse(fs.readFileSync(TOKENS_PATH, "utf8")) as TokenStore;
-  } catch {
-    return { tokens: [] };
+  if (fs.existsSync(PRIVATE_KEY_PATH) && fs.existsSync(PUBLIC_KEY_PATH)) {
+    privateKey = fs.readFileSync(PRIVATE_KEY_PATH, "utf8");
+    publicKey = fs.readFileSync(PUBLIC_KEY_PATH, "utf8");
+    console.log("[auth] Loaded existing RSA key pair from", KEYS_DIR);
+    return;
   }
+
+  console.log("[auth] Generating new RSA-2048 key pair...");
+  const { privateKey: priv, publicKey: pub } = crypto.generateKeyPairSync(
+    "rsa",
+    {
+      modulusLength: 2048,
+      publicKeyEncoding: { type: "spki", format: "pem" },
+      privateKeyEncoding: { type: "pkcs8", format: "pem" },
+    }
+  );
+
+  fs.writeFileSync(PRIVATE_KEY_PATH, priv, { mode: 0o600 });
+  fs.writeFileSync(PUBLIC_KEY_PATH, pub, { mode: 0o644 });
+  privateKey = priv;
+  publicKey = pub;
+  console.log("[auth] RSA key pair saved to", KEYS_DIR);
 }
 
-export function writeTokenStore(store: TokenStore): void {
-  atomicWrite(TOKENS_PATH, `${JSON.stringify(store, null, 2)}\n`);
+/**
+ * Issue a 30-day RS256 JWT for the companion phone client.
+ */
+export function issueToken(): string {
+  return jwt.sign({ sub: "companion-phone", role: "client" }, privateKey, {
+    algorithm: "RS256",
+    expiresIn: "30d",
+  });
 }
 
-export function issueToken(label = "manual"): TokenEntry {
-  const store = readTokenStore();
-  const entry: TokenEntry = {
-    id: crypto.randomUUID(),
-    token: crypto.randomBytes(32).toString("base64url"),
-    label,
-    createdAt: new Date().toISOString(),
-    lastSeenAt: null,
-    revokedAt: null,
-  };
-  store.tokens.push(entry);
-  writeTokenStore(store);
-  return entry;
+/**
+ * Verify a JWT token string. Throws if invalid or expired.
+ */
+export function verifyToken(token: string): jwt.JwtPayload {
+  return jwt.verify(token, publicKey, { algorithms: ["RS256"] }) as jwt.JwtPayload;
 }
 
-export function revokeToken(id: string): TokenEntry | null {
-  const store = readTokenStore();
-  const entry = store.tokens.find((token) => token.id === id);
-  if (!entry) return null;
-  if (!entry.revokedAt) entry.revokedAt = new Date().toISOString();
-  writeTokenStore(store);
-  return entry;
-}
-
-export function rotateAllTokens(label = "setup-initial"): TokenEntry {
-  const now = new Date().toISOString();
-  const store = readTokenStore();
-  for (const entry of store.tokens) {
-    if (!entry.revokedAt) entry.revokedAt = now;
-  }
-  const next: TokenEntry = {
-    id: crypto.randomUUID(),
-    token: crypto.randomBytes(32).toString("base64url"),
-    label,
-    createdAt: now,
-    lastSeenAt: null,
-    revokedAt: null,
-  };
-  store.tokens.push(next);
-  writeTokenStore(store);
-  return next;
-}
-
-function maybeTouchToken(tokenId: string): void {
-  const now = Date.now();
-  const last = lastSeenWrites.get(tokenId) ?? 0;
-  if (now - last < LAST_SEEN_DEBOUNCE_MS) return;
-  lastSeenWrites.set(tokenId, now);
-
-  const store = readTokenStore();
-  const entry = store.tokens.find((item) => item.id === tokenId);
-  if (!entry || entry.revokedAt) return;
-  entry.lastSeenAt = new Date().toISOString();
-  writeTokenStore(store);
-}
-
-export function verifyToken(token: string, options?: { touch?: boolean }): TokenEntry {
-  const entry = readTokenStore().tokens.find((item) => item.token === token && !item.revokedAt);
-  if (!entry) throw new Error("Invalid or revoked token");
-  if (options?.touch !== false) maybeTouchToken(entry.id);
-  return entry;
-}
-
-export function extractBearerToken(req: Request): string {
-  const header = req.headers.authorization ?? "";
-  return header.startsWith("Bearer ") ? header.slice(7) : "";
-}
-
+/**
+ * Express middleware: validate Bearer token from Authorization header.
+ */
 export function requireAuth(req: Request, res: Response, next: NextFunction): void {
-  const token = extractBearerToken(req);
+  const header = req.headers.authorization ?? "";
+  const headerToken = header.startsWith("Bearer ") ? header.slice(7) : "";
+  // Allow token via query param for clients that can't set headers (e.g. EventSource)
+  const queryToken = typeof req.query.token === "string" ? req.query.token : "";
+  const token = headerToken || queryToken;
+
   if (!token) {
-    res.status(401).json({ ok: false, error: "Missing bearer token" });
+    res.status(401).json({ error: "Missing authorization token" });
     return;
   }
 
   try {
-    const entry = verifyToken(token);
-    (req as any).authToken = entry;
+    verifyToken(token);
     next();
   } catch {
-    res.status(401).json({ ok: false, error: "Invalid or revoked token" });
+    res.status(401).json({ error: "Invalid or expired token" });
   }
 }
 
-function getVersion(): string {
-  try {
-    const pkg = JSON.parse(fs.readFileSync(PACKAGE_JSON_PATH, "utf8")) as { version?: string };
-    return pkg.version ?? "0.0.0";
-  } catch {
-    return "0.0.0";
-  }
-}
+/**
+ * POST /auth/token
+ *
+ * Body: { "secret": "<AUTH_SECRET>" }
+ * Response: { "token": "<jwt>" }
+ */
+export function authTokenHandler(req: Request, res: Response): void {
+  const { secret } = req.body as { secret?: string };
+  const authSecret = process.env.AUTH_SECRET;
 
-export function healthHandler(_req: Request, res: Response): void {
-  res.json({ ok: true, version: getVersion() });
-}
-
-export function authVerifyHandler(req: Request, res: Response): void {
-  const { token } = req.body as { token?: string };
-  if (!token || typeof token !== "string") {
-    res.status(400).json({ ok: false, error: "token is required" });
+  if (!authSecret) {
+    res.status(500).json({ error: "AUTH_SECRET not configured on server" });
     return;
   }
 
-  try {
-    const entry = verifyToken(token);
-    res.json({ ok: true, label: entry.label });
-  } catch {
-    res.status(401).json({ ok: false, error: "Invalid or revoked token" });
+  const secretOk =
+    secret &&
+    secret.length === authSecret.length &&
+    crypto.timingSafeEqual(Buffer.from(secret), Buffer.from(authSecret));
+  if (!secretOk) {
+    res.status(401).json({ error: "Invalid secret" });
+    return;
   }
+
+  const token = issueToken();
+  res.json({ token });
 }

@@ -5,31 +5,23 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
-    "setup": "tsx src/setup.ts",
     "build": "tsc",
     "start": "tsc && node dist/index.js",
     "dev": "tsx src/index.ts",
-    "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/**/*.test.ts",
-    "token:issue": "tsx ../scripts/token-issue.ts",
-    "token:revoke": "tsx ../scripts/token-revoke.ts",
-    "token:list": "tsx ../scripts/token-list.ts",
-    "token:rotate-all": "tsx ../scripts/token-rotate-all.ts"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@clack/prompts": "^0.9.1",
     "@huggingface/transformers": "^4.2.0",
     "@lancedb/lancedb": "^0.27.2",
     "@mariozechner/pi-coding-agent": "^0.70.5",
     "@types/node-cron": "^3.0.11",
-    "@types/qrcode-terminal": "^0.12.2",
     "cors": "^2.8.6",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "googleapis": "^171.4.0",
+    "jsonrepair": "^3.14.0",
     "jsonwebtoken": "^9.0.2",
     "node-cron": "^4.2.1",
-    "qrcode-terminal": "^0.12.0",
     "ws": "^8.17.1"
   },
   "devDependencies": {

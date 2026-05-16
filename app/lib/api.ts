@@ -1,4 +1,3 @@
-import * as SecureStore from 'expo-secure-store';
 import { useStore } from './store';
 
 export async function apiFetch(path: string, options?: RequestInit): Promise<Response> {
@@ -14,9 +13,8 @@ export async function apiFetch(path: string, options?: RequestInit): Promise<Res
     },
   });
   if (response.status === 401) {
+    // Token expired or invalid — clear credentials and redirect to setup
     const { router } = await import('expo-router');
-    await SecureStore.deleteItemAsync('serverUrl').catch(() => {});
-    await SecureStore.deleteItemAsync('token').catch(() => {});
     useStore.getState().setCredentials('', '');
     router.replace('/setup');
   }

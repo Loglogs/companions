@@ -19,7 +19,7 @@ Modes:
 - shapeshifter: quick hacks, prototyping, "just try", creative, fast experiments, "I'm stuck"
 - keeper: notes, brain dumps, "remember this", journaling, "write this down", "save this", tasks
 - tracker: calendar, schedule, "what's on", emails, "what did I miss", time, events, reminders
-Default to saniel if unclear. Respond with ONLY valid JSON, no markdown.`;
+Default to mentor if unclear. Respond with ONLY valid JSON, no markdown.`;
 
 export async function classifyMessage(text: string): Promise<{ mode: Mode; reason: string }> {
   const spec = process.env.ROUTER_MODEL ?? process.env.DEFAULT_MODEL;

@@ -1,6 +1,8 @@
 import React, { useRef, useMemo, useCallback } from 'react';
-import { ScrollView, View, Text, StyleSheet } from 'react-native';
-import { Message, AgentState, getPersonaEmoji, getPersonaName, MODE_ACCENTS, useStore } from '../lib/store';
+import { ScrollView, View, Text, StyleSheet, TouchableWithoutFeedback, ToastAndroid } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
+import Markdown from 'react-native-markdown-display';
+import { Message, AgentState, MODE_ACCENTS, useStore, getModeName, getModeEmoji } from '../lib/store';
 import { useTheme } from '../lib/theme';
 import TypingIndicator from './TypingIndicator';
 
@@ -25,10 +27,22 @@ function formatTime(ts: number): string {
 
 export default function MessageList({ messages, streamingText, accent, agentState }: MessageListProps) {
   const scrollRef = useRef<ScrollView>(null);
-  const personas = useStore((s) => s.personas);
   const theme = useTheme();
+  const modes = useStore(s => s.modes);
 
   const showTyping = agentState === 'thinking' && streamingText.length === 0;
+
+  const markdownStyles = useMemo(() => ({
+    body: { fontSize: 15, lineHeight: 22, fontFamily: 'DMSans_400Regular', color: theme.text },
+    strong: { fontFamily: 'DMSans_700Bold' },
+    em: { fontStyle: 'italic' as const },
+    paragraph: { marginTop: 0, marginBottom: 4 },
+    bullet_list: { marginVertical: 2 },
+    ordered_list: { marginVertical: 2 },
+    list_item: { marginVertical: 1 },
+    code_inline: { fontFamily: 'monospace', backgroundColor: 'rgba(0,0,0,0.15)', borderRadius: 3 },
+    fence: { backgroundColor: 'rgba(0,0,0,0.12)', borderRadius: 6, padding: 8, marginVertical: 4 },
+  }), [theme]);
 
   // M2: Track whether the user is near the bottom so auto-scroll doesn't hijack
   // manual scrolling up through history.
@@ -40,7 +54,7 @@ export default function MessageList({ messages, streamingText, accent, agentStat
     isNearBottom.current = distanceFromBottom < 80;
   }, []);
 
-  // M1: Memoize group computation - only recalculates when messages array changes.
+  // M1: Memoize group computation — only recalculates when messages array changes.
   type Group = { role: 'user' | 'assistant'; msgs: Message[]; persona?: string };
   const groups = useMemo(() => {
     const result: Group[] = [];
@@ -55,7 +69,7 @@ export default function MessageList({ messages, streamingText, accent, agentStat
     return result;
   }, [messages]);
 
-  // M1: Memoize rendered bubbles - only recalculates when groups/theme/accent change,
+  // M1: Memoize rendered bubbles — only recalculates when groups/theme/accent change,
   // not on each streaming token.
   const renderedGroups = useMemo(() => {
     const nodes: React.ReactNode[] = [];
@@ -80,26 +94,34 @@ export default function MessageList({ messages, streamingText, accent, agentStat
         const isFirst = mi === 0;
         const isUser = msg.role === 'user';
 
-        const assistantBorderColor = !isUser && msg.persona
-          ? (MODE_ACCENTS[msg.persona] ?? 'transparent')
-          : 'transparent';
+        const isError = !isUser && msg.text.trimStart().startsWith('⚠');
+        const assistantBorderColor = isError
+          ? '#E53935'
+          : (!isUser && msg.persona ? (MODE_ACCENTS[msg.persona] ?? 'transparent') : 'transparent');
 
         const bubbleStyle = isUser
           ? [styles.bubble, styles.userBubble, { backgroundColor: accent }, !isLast && styles.userBubbleGrouped]
-          : [styles.bubble, styles.assistantBubble, { backgroundColor: theme.surface }, !isLast && styles.assistantBubbleGrouped, { borderLeftWidth: 2, borderLeftColor: assistantBorderColor }];
+          : [styles.bubble, styles.assistantBubble, { backgroundColor: isError ? 'rgba(229,57,53,0.08)' : theme.surface }, !isLast && styles.assistantBubbleGrouped, { borderLeftWidth: 2, borderLeftColor: assistantBorderColor }];
 
         nodes.push(
           <View key={msg.id} style={[styles.bubbleWrapper, isUser ? styles.wrapperUser : styles.wrapperAssistant, !isFirst && { marginTop: 2 }]}>
             {isFirst && !isUser && msg.persona && (
-              <Text style={[styles.personaLabel, { color: MODE_ACCENTS[msg.persona] ?? theme.textDim }]}> 
-                {getPersonaEmoji(msg.persona, personas)} {getPersonaName(msg.persona, personas)}
+              <Text style={[styles.personaLabel, { color: MODE_ACCENTS[msg.persona] ?? theme.textDim }]}>
+                {getModeEmoji(msg.persona, modes)} {getModeName(msg.persona, modes)}
               </Text>
             )}
-            <View style={bubbleStyle}>
-              <Text selectable style={[styles.bubbleText, isUser ? styles.userText : { color: theme.text }]}>
-                {msg.text}
-              </Text>
-            </View>
+            <TouchableWithoutFeedback onLongPress={() => {
+              Clipboard.setStringAsync(msg.text);
+              ToastAndroid.show('Copied', ToastAndroid.SHORT);
+            }}>
+              <View style={bubbleStyle}>
+                {isUser ? (
+                  <Text selectable style={[styles.bubbleText, styles.userText]}>{msg.text}</Text>
+                ) : (
+                  <Markdown style={markdownStyles}>{msg.text}</Markdown>
+                )}
+              </View>
+            </TouchableWithoutFeedback>
           </View>
         );
       }
@@ -113,7 +135,7 @@ export default function MessageList({ messages, streamingText, accent, agentStat
       prevGroupLastTs = lastTs;
     }
     return nodes;
-  }, [groups, theme, accent, personas]);
+  }, [groups, theme, accent, markdownStyles]);
 
   const hasContent = messages.length > 0 || streamingText.length > 0 || showTyping;
 
@@ -138,7 +160,7 @@ export default function MessageList({ messages, streamingText, accent, agentStat
       {!showTyping && streamingText.length > 0 && (
         <View key="streaming" style={[styles.bubbleWrapper, styles.wrapperAssistant]}>
           <View style={[styles.bubble, styles.assistantBubble, { backgroundColor: theme.surface }]}>
-            <Text selectable style={[styles.bubbleText, { color: theme.text }]}>{streamingText}</Text>
+            <Text style={[styles.bubbleText, { color: theme.text }]}>{streamingText}</Text>
           </View>
         </View>
       )}

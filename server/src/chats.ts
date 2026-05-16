@@ -13,6 +13,7 @@ interface ConversationMeta {
   startedAt: number;
   title: string;
   project?: string;
+  folder?: string;
 }
 
 interface Message {
@@ -71,9 +72,9 @@ export async function migrateToInbox(): Promise<{ migrated: number; skipped: num
     return { migrated: 0, skipped: 0 };
   }
 
-  fs.mkdirSync(convosDir("inbox"), { recursive: true });
+  fs.mkdirSync(convosDir("general"), { recursive: true });
 
-  const existingIndex = await readIndex("inbox");
+  const existingIndex = await readIndex("general");
   const existingIds = new Set(existingIndex.map((c) => c.id));
 
   let migrated = 0;
@@ -87,12 +88,12 @@ export async function migrateToInbox(): Promise<{ migrated: number; skipped: num
     }
 
     const srcFile = path.join(LEGACY_CHATS_DIR, `${meta.id}.json`);
-    const destFile = convoPath("inbox", meta.id);
+    const destFile = convoPath("general", meta.id);
 
     try {
       const content = await fs.promises.readFile(srcFile, "utf8");
       await fs.promises.writeFile(destFile, content);
-      newEntries.push({ ...meta, project: "inbox" });
+      newEntries.push({ ...meta, project: "general" });
       migrated++;
     } catch {
       skipped++;
@@ -109,7 +110,7 @@ export async function migrateToInbox(): Promise<{ migrated: number; skipped: num
     return true;
   });
 
-  await writeIndex("inbox", deduped);
+  await writeIndex("general", deduped);
 
   console.log(`[chats] Migration: ${migrated} migrated, ${skipped} skipped`);
   return { migrated, skipped };
@@ -131,15 +132,25 @@ export function createChatsRouter() {
     }
   });
 
+  // GET /chats/folders?project=<slug>
+  router.get("/chats/folders", async (req, res) => {
+    const slug = (req.query.project as string | undefined) ?? "general";
+    const index = await readIndex(slug);
+    const folders = Array.from(
+      new Set(index.map(c => c.folder).filter((f): f is string => !!f))
+    ).sort();
+    res.json({ folders });
+  });
+
   // GET /chats?project=<slug>
   router.get("/chats", async (req, res) => {
-    const slug = (req.query.project as string | undefined) ?? "inbox";
+    const slug = (req.query.project as string | undefined) ?? "general";
     res.json({ conversations: await readIndex(slug) });
   });
 
   // GET /chats/:id?project=<slug>
   router.get("/chats/:id", async (req, res) => {
-    const slug = (req.query.project as string | undefined) ?? "inbox";
+    const slug = (req.query.project as string | undefined) ?? "general";
     const file = convoPath(slug, req.params.id);
     try {
       const raw = await fs.promises.readFile(file, "utf8");
@@ -157,7 +168,7 @@ export function createChatsRouter() {
       project?: string;
     };
     const id = req.params.id;
-    const slug = project ?? "inbox";
+    const slug = project ?? "general";
 
     if (!id || !messages || !meta) {
       res.status(400).json({ error: "bad request" });
@@ -183,7 +194,7 @@ export function createChatsRouter() {
 
   // DELETE /chats/:id?project=<slug>
   router.delete("/chats/:id", async (req, res) => {
-    const slug = (req.query.project as string | undefined) ?? "inbox";
+    const slug = (req.query.project as string | undefined) ?? "general";
     const id = req.params.id;
     try {
       await fs.promises.unlink(convoPath(slug, id));
@@ -195,7 +206,7 @@ export function createChatsRouter() {
 
   // DELETE /chats?project=<slug>
   router.delete("/chats", async (req, res) => {
-    const slug = (req.query.project as string | undefined) ?? "inbox";
+    const slug = (req.query.project as string | undefined) ?? "general";
     const index = await readIndex(slug);
     await Promise.all(
       index.map((c) => fs.promises.unlink(convoPath(slug, c.id)).catch(() => {}))

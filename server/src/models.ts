@@ -111,6 +111,24 @@ export function resolveDefaultModel(): Model<any> | undefined {
   return model;
 }
 
+/** Resolve VISION_MODEL — used for image/multimodal messages (e.g. Gemma 4 via Ollama). */
+export function resolveVisionModel(): Model<any> | undefined {
+  const spec = process.env.VISION_MODEL;
+  const apiKey = process.env.VISION_MODEL_KEY;
+  if (!spec) return undefined;
+  try {
+    const model = parseModelSpec(spec, apiKey);
+    if (model) {
+      (model as any).input = ["text", "image"];
+      console.log(`[models] Vision model: ${model.name} (${model.api} @ ${(model as any).baseUrl ?? ""})`);
+    }
+    return model;
+  } catch (err) {
+    console.warn(`[models] Invalid VISION_MODEL spec: ${err}`);
+    return undefined;
+  }
+}
+
 /** Resolve FALLBACK_MODEL — used when the primary model is unreachable. */
 export function resolveFallbackModel(): Model<any> | undefined {
   const spec = process.env.FALLBACK_MODEL;

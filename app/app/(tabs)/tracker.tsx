@@ -13,6 +13,8 @@ import {
   ActivityIndicator,
   Alert,
   ScrollView,
+  FlatList,
+  Modal,
   Animated,
   Dimensions,
   KeyboardAvoidingView,
@@ -26,7 +28,7 @@ import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '../../lib/theme';
 import { apiFetch } from '../../lib/api';
-import { useStore, getPersonaEmoji, getPersonaName } from '../../lib/store';
+import { useStore, MODE_EMOJIS, MODE_NAMES, getModeName, getModeEmoji } from '../../lib/store';
 import SettingsModal from '../../components/SettingsModal';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -40,6 +42,7 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const PLACEHOLDER_HAIKU = "Do you realise,\nthat placeholders shouldn't be,\nthis exciting right?";
 
 const PRIORITY_COLORS: Record<number, string> = { 1: '#FF5252', 2: '#FFB300', 3: '#42A5F5' };
+const RHYTHM_COLOR = '#66BB6A';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -62,6 +65,39 @@ interface AgendaDay {
   label: string;
   shortLabel: string;
   events: AgendaEvent[];
+}
+
+interface RhythmDue {
+  id: string;
+  title: string;
+  type: 'weekly' | 'monthly' | 'annual';
+  dueDate: string;
+  completed: boolean;
+  schedule: {
+    days?: number[];
+    dayOfMonth?: number;
+    month?: number;
+    day?: number;
+  };
+}
+
+interface Rhythm {
+  id: string;
+  title: string;
+  description?: string;
+  type: 'weekly' | 'monthly' | 'annual';
+  schedule: {
+    days?: number[];
+    dayOfMonth?: number;
+    month?: number;
+    day?: number;
+  };
+  notifyMinutes: number;
+  active: boolean;
+  createdAt: string;
+  source: 'manual' | 'ingest';
+  completions: string[];
+  calEventId?: string;
 }
 
 // ─── Utility functions ────────────────────────────────────────────────────────
@@ -164,7 +200,7 @@ function buildFileContent(dateKey: string, haiku: string, tasks: Task[]): string
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function TrackerScreen() {
+export default function LendaScreen() {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const isDark = useStore((s) => s.isDark);
@@ -172,7 +208,7 @@ export default function TrackerScreen() {
   const calDigest = useStore((s) => s.calDigest);
   const setCalDigest = useStore((s) => s.setCalDigest);
   const connected = useStore((s) => s.connected);
-  const personas = useStore((s) => s.personas);
+  const modes = useStore((s) => s.modes);
   const today = todayKey();
 
   // ── State ───────────────────────────────────────────────────────────────────
@@ -194,6 +230,21 @@ export default function TrackerScreen() {
   const [phraseOfWeek, setPhraseOfWeek] = useState('');
   const [editingPhrase, setEditingPhrase] = useState(false);
   const [phraseDraft, setPhraseDraft] = useState('');
+
+  // Rhythms
+  const [dueRhythms, setDueRhythms] = useState<RhythmDue[]>([]);
+  const [rhythmsModalVisible, setRhythmsModalVisible] = useState(false);
+  const [allRhythms, setAllRhythms] = useState<Rhythm[]>([]);
+  const [rhythmForm, setRhythmForm] = useState<{
+    visible: boolean;
+    title: string;
+    type: 'weekly' | 'monthly' | 'annual';
+    days: number[];
+    dayOfMonth: number;
+    month: number;
+    day: number;
+    description: string;
+  }>({ visible: false, title: '', type: 'weekly', days: [], dayOfMonth: 1, month: 1, day: 1, description: '' });
 
   // Settings modal
   const [settingsVisible, setSettingsVisible] = useState(false);
@@ -328,6 +379,16 @@ export default function TrackerScreen() {
     } catch {}
   }, []);
 
+  // ── Rhythms (fetchDueRhythms declared here so it's available to the mount effect) ──
+
+  const fetchDueRhythms = useCallback(async () => {
+    try {
+      const r = await apiFetch(`/rhythms/due?date=${todayKey()}`);
+      const d = await r.json();
+      setDueRhythms(d.rhythms ?? []);
+    } catch {}
+  }, []);
+
   // ── Load data ───────────────────────────────────────────────────────────────
 
   const loadData = useCallback(async () => {
@@ -434,7 +495,7 @@ export default function TrackerScreen() {
     }
   }, [today]);
 
-  useEffect(() => { if (connected) loadData(); }, [connected, loadData]);
+  useEffect(() => { if (connected) { loadData(); fetchDueRhythms(); } }, [connected, loadData, fetchDueRhythms]);
 
   useEffect(() => {
     return () => {
@@ -618,6 +679,49 @@ export default function TrackerScreen() {
     );
   }, [haiku, saveJournal]);
 
+  // ── Rhythms (remaining callbacks) ───────────────────────────────────────────
+
+  const fetchAllRhythms = useCallback(async () => {
+    try {
+      const r = await apiFetch('/rhythms');
+      const d = await r.json();
+      setAllRhythms(Array.isArray(d) ? d : []);
+    } catch {}
+  }, []);
+
+  const completeRhythm = useCallback(async (id: string) => {
+    try {
+      await apiFetch(`/rhythms/${id}/complete`, { method: 'POST' });
+      fetchDueRhythms();
+    } catch {}
+  }, [fetchDueRhythms]);
+
+  const deleteRhythm = useCallback(async (id: string) => {
+    try {
+      await apiFetch(`/rhythms/${id}`, { method: 'DELETE' });
+      fetchAllRhythms();
+      fetchDueRhythms();
+    } catch {}
+  }, [fetchAllRhythms, fetchDueRhythms]);
+
+  const saveRhythm = useCallback(async () => {
+    if (!rhythmForm.title.trim()) return;
+    const schedule =
+      rhythmForm.type === 'weekly' ? { days: rhythmForm.days.length ? rhythmForm.days : [0] } :
+      rhythmForm.type === 'monthly' ? { dayOfMonth: rhythmForm.dayOfMonth } :
+      { month: rhythmForm.month, day: rhythmForm.day };
+    try {
+      await apiFetch('/rhythms', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: rhythmForm.title.trim(), type: rhythmForm.type, schedule, description: rhythmForm.description }),
+      });
+      setRhythmForm(f => ({ ...f, visible: false, title: '', description: '' }));
+      fetchAllRhythms();
+      fetchDueRhythms();
+    } catch {}
+  }, [rhythmForm, fetchAllRhythms, fetchDueRhythms]);
+
   // ── Haiku scroll handler ─────────────────────────────────────────────────────
 
   const handleHaikuScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -642,7 +746,7 @@ export default function TrackerScreen() {
       onMoveShouldSetPanResponder: (_, g) =>
         Math.abs(g.dx) > 12 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
       onPanResponderRelease: (_, g) => {
-        if (g.dx < -40) router.replace('/(tabs)/mentor');
+        if (g.dx < -40) router.replace('/(tabs)/saniel');
       },
     })
   ).current;
@@ -691,7 +795,7 @@ export default function TrackerScreen() {
           onLongPress={() => { setSettingsSection('model'); setSettingsVisible(true); }}
           activeOpacity={0.7}
         >
-          <Text style={styles.headerTitle}>{`${getPersonaEmoji('tracker', personas)} ${getPersonaName('tracker', personas)}`}</Text>
+          <Text style={styles.headerTitle}>{`${getModeEmoji('tracker', modes)} ${getModeName('tracker', modes)}`}</Text>
         </TouchableOpacity>
         <View style={styles.headerTitleWrap} pointerEvents="none">
           <Text style={[styles.headerDate, { color: theme.textDim }]}>{formatHeaderDate()}</Text>
@@ -910,8 +1014,8 @@ export default function TrackerScreen() {
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
           >
-            {/* Today's tasks */}
-            {sortedTasks.map((item) => (
+            {/* Prioritized tasks (p1–p3) */}
+            {sortedTasks.filter(t => t.priority !== undefined).map((item) => (
               <View key={item._i} style={styles.taskRow}>
                 <TouchableOpacity onPress={() => cyclePriority(item._i)} activeOpacity={0.7} style={styles.priorityDot}>
                   <View style={[styles.priorityDotInner, { backgroundColor: item.priority ? PRIORITY_COLORS[item.priority] : 'transparent', borderColor: item.priority ? PRIORITY_COLORS[item.priority] : theme.border }]} />
@@ -948,6 +1052,84 @@ export default function TrackerScreen() {
                       { color: item.priority && !item.done ? PRIORITY_COLORS[item.priority] : theme.text },
                       item.done && styles.taskTextDone
                     ]}>
+                      {item.text}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            ))}
+
+            {/* Rhythms section — between prioritized and unprioritized */}
+            <View>
+              <View style={[styles.sectionDivider, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
+                <Text style={[styles.sectionDividerLabel, { color: theme.textFaint }]}>rhythms</Text>
+                <TouchableOpacity onPress={() => { setRhythmsModalVisible(true); fetchAllRhythms(); }}>
+                  <Text style={{ fontSize: 12, color: RHYTHM_COLOR }}>Manage →</Text>
+                </TouchableOpacity>
+              </View>
+              {dueRhythms.length === 0 && (
+                <TouchableOpacity onPress={() => { setRhythmsModalVisible(true); fetchAllRhythms(); }} style={{ paddingVertical: 6 }}>
+                  <Text style={[styles.taskText, { color: theme.textDim, opacity: 0.35 }]}>No rhythms due — tap Manage to add</Text>
+                </TouchableOpacity>
+              )}
+              {dueRhythms.map(r => (
+                <View key={r.id} style={styles.taskRow}>
+                  <View style={styles.priorityDot}>
+                    <View style={[styles.priorityDotInner, { backgroundColor: RHYTHM_COLOR, borderColor: RHYTHM_COLOR }]} />
+                  </View>
+                  <TouchableOpacity onPress={() => completeRhythm(r.id)} activeOpacity={0.7}>
+                    <Text style={[styles.taskCircle, { color: theme.text }, r.completed && styles.taskCircleDone]}>
+                      {r.completed ? '●' : '◯'}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.flex} onPress={() => completeRhythm(r.id)} activeOpacity={0.7}>
+                    <Text style={[styles.taskText, { color: RHYTHM_COLOR }, r.completed && styles.taskTextDone]}>
+                      {r.title}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+
+            {/* Backlog (unprioritized tasks) */}
+            {sortedTasks.filter(t => t.priority === undefined).length > 0 && (
+              <View style={styles.sectionDivider}>
+                <Text style={[styles.sectionDividerLabel, { color: theme.textFaint }]}>backlog</Text>
+              </View>
+            )}
+            {sortedTasks.filter(t => t.priority === undefined).map((item) => (
+              <View key={item._i} style={styles.taskRow}>
+                <TouchableOpacity onPress={() => cyclePriority(item._i)} activeOpacity={0.7} style={styles.priorityDot}>
+                  <View style={[styles.priorityDotInner, { backgroundColor: 'transparent', borderColor: theme.border }]} />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => editingTaskIndex !== item._i && toggleTask(item._i)} activeOpacity={0.7}>
+                  <Text style={[styles.taskCircle, { color: theme.text }, item.done && styles.taskCircleDone]}>
+                    {item.done ? '●' : '◯'}
+                  </Text>
+                </TouchableOpacity>
+                {editingTaskIndex === item._i ? (
+                  <>
+                    <TextInput
+                      style={[styles.taskText, styles.taskTextFlex, styles.taskEditInput, { color: theme.text }]}
+                      value={editingText}
+                      onChangeText={setEditingText}
+                      onBlur={() => saveEditTask(item._i)}
+                      onSubmitEditing={() => saveEditTask(item._i)}
+                      autoFocus
+                      returnKeyType="done"
+                    />
+                    <TouchableOpacity onPress={() => deleteTask(item._i)} activeOpacity={0.7} style={styles.taskDeleteBtn}>
+                      <Text style={[styles.taskDeleteLabel, { color: theme.textFaint }]}>✕</Text>
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <TouchableOpacity
+                    style={styles.flex}
+                    onPress={() => toggleTask(item._i)}
+                    onLongPress={() => startEditTask(item._i)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.taskText, { color: theme.text }, item.done && styles.taskTextDone]}>
                       {item.text}
                     </Text>
                   </TouchableOpacity>
@@ -1230,6 +1412,115 @@ export default function TrackerScreen() {
           </KeyboardAvoidingView>
         </Animated.View>
       )}
+
+      {/* ── Rhythms modal ──────────────────────────────────────────────────── */}
+      <Modal visible={rhythmsModalVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setRhythmsModalVisible(false)}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <View style={{ flex: 1, backgroundColor: theme.bg }}>
+          {/* Header */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, paddingTop: 20, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border }}>
+            <Text style={{ fontSize: 17, fontWeight: '600', color: theme.text }}>Rhythms</Text>
+            <TouchableOpacity onPress={() => setRhythmsModalVisible(false)}>
+              <Text style={{ fontSize: 15, color: ACCENT }}>Done</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* List */}
+          <FlatList
+            data={allRhythms}
+            keyExtractor={r => r.id}
+            ListEmptyComponent={<Text style={{ textAlign: 'center', color: theme.text, opacity: 0.4, marginTop: 40 }}>No rhythms yet</Text>}
+            renderItem={({ item: r }) => {
+              const typeLabel = r.type === 'weekly' ? 'W' : r.type === 'monthly' ? 'M' : 'Y';
+              return (
+                <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border + '33' }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 15, color: theme.text }}>{r.title}</Text>
+                    {r.description ? <Text style={{ fontSize: 12, color: theme.text, opacity: 0.5, marginTop: 2 }}>{r.description}</Text> : null}
+                  </View>
+                  <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, backgroundColor: ACCENT + '22', marginRight: 12 }}>
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: ACCENT }}>{typeLabel}</Text>
+                  </View>
+                  <TouchableOpacity onPress={() => Alert.alert('Delete rhythm?', r.title, [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: () => deleteRhythm(r.id) }])}>
+                    <Text style={{ color: '#FF6135', fontSize: 13 }}>Delete</Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            }}
+          />
+
+          {/* Add Rhythm form or button */}
+          {rhythmForm.visible ? (
+            <View style={{ padding: 16, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.border }}>
+              <TextInput
+                value={rhythmForm.title}
+                onChangeText={t => setRhythmForm(f => ({ ...f, title: t }))}
+                placeholder="Rhythm title"
+                placeholderTextColor={theme.textDim}
+                style={{ borderWidth: 1, borderColor: theme.border, borderRadius: 8, padding: 10, color: theme.text, marginBottom: 10, fontSize: 15 }}
+              />
+              {/* Type selector */}
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
+                {(['weekly', 'monthly', 'annual'] as const).map(t => (
+                  <TouchableOpacity key={t} onPress={() => setRhythmForm(f => ({ ...f, type: t }))} style={{ flex: 1, paddingVertical: 8, borderRadius: 8, backgroundColor: rhythmForm.type === t ? ACCENT : ACCENT + '22', alignItems: 'center' }}>
+                    <Text style={{ fontSize: 13, fontWeight: '600', color: rhythmForm.type === t ? '#fff' : ACCENT }}>{t[0].toUpperCase() + t.slice(1)}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              {/* Schedule by type */}
+              {rhythmForm.type === 'weekly' && (
+                <View style={{ flexDirection: 'row', gap: 6, marginBottom: 10 }}>
+                  {['S','M','T','W','T','F','S'].map((label, i) => (
+                    <TouchableOpacity key={i} onPress={() => setRhythmForm(f => ({ ...f, days: f.days.includes(i) ? f.days.filter(d => d !== i) : [...f.days, i] }))} style={{ flex: 1, paddingVertical: 6, borderRadius: 6, backgroundColor: rhythmForm.days.includes(i) ? ACCENT : ACCENT + '22', alignItems: 'center' }}>
+                      <Text style={{ fontSize: 12, fontWeight: '600', color: rhythmForm.days.includes(i) ? '#fff' : ACCENT }}>{label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+              {rhythmForm.type === 'monthly' && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10 }}>
+                  <Text style={{ color: theme.text, fontSize: 14 }}>Day of month:</Text>
+                  <TouchableOpacity onPress={() => setRhythmForm(f => ({ ...f, dayOfMonth: Math.max(1, f.dayOfMonth - 1) }))} style={{ padding: 8 }}><Text style={{ color: ACCENT, fontSize: 18 }}>−</Text></TouchableOpacity>
+                  <Text style={{ color: theme.text, fontSize: 16, minWidth: 24, textAlign: 'center' }}>{rhythmForm.dayOfMonth}</Text>
+                  <TouchableOpacity onPress={() => setRhythmForm(f => ({ ...f, dayOfMonth: Math.min(31, f.dayOfMonth + 1) }))} style={{ padding: 8 }}><Text style={{ color: ACCENT, fontSize: 18 }}>+</Text></TouchableOpacity>
+                </View>
+              )}
+              {rhythmForm.type === 'annual' && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+                  <Text style={{ color: theme.text, fontSize: 14 }}>Month:</Text>
+                  <TouchableOpacity onPress={() => setRhythmForm(f => ({ ...f, month: Math.max(1, f.month - 1) }))} style={{ padding: 6 }}><Text style={{ color: ACCENT, fontSize: 16 }}>−</Text></TouchableOpacity>
+                  <Text style={{ color: theme.text, fontSize: 14, minWidth: 30, textAlign: 'center' }}>{['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][rhythmForm.month - 1]}</Text>
+                  <TouchableOpacity onPress={() => setRhythmForm(f => ({ ...f, month: Math.min(12, f.month + 1) }))} style={{ padding: 6 }}><Text style={{ color: ACCENT, fontSize: 16 }}>+</Text></TouchableOpacity>
+                  <Text style={{ color: theme.text, fontSize: 14, marginLeft: 8 }}>Day:</Text>
+                  <TouchableOpacity onPress={() => setRhythmForm(f => ({ ...f, day: Math.max(1, f.day - 1) }))} style={{ padding: 6 }}><Text style={{ color: ACCENT, fontSize: 16 }}>−</Text></TouchableOpacity>
+                  <Text style={{ color: theme.text, fontSize: 14, minWidth: 24, textAlign: 'center' }}>{rhythmForm.day}</Text>
+                  <TouchableOpacity onPress={() => setRhythmForm(f => ({ ...f, day: Math.min(31, f.day + 1) }))} style={{ padding: 6 }}><Text style={{ color: ACCENT, fontSize: 16 }}>+</Text></TouchableOpacity>
+                </View>
+              )}
+              <TextInput
+                value={rhythmForm.description}
+                onChangeText={t => setRhythmForm(f => ({ ...f, description: t }))}
+                placeholder="Description (optional)"
+                placeholderTextColor={theme.textDim}
+                style={{ borderWidth: 1, borderColor: theme.border, borderRadius: 8, padding: 10, color: theme.text, marginBottom: 10, fontSize: 14 }}
+              />
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <TouchableOpacity onPress={() => setRhythmForm(f => ({ ...f, visible: false }))} style={{ flex: 1, padding: 12, borderRadius: 8, borderWidth: 1, borderColor: theme.border, alignItems: 'center' }}>
+                  <Text style={{ color: theme.text, fontSize: 14 }}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={saveRhythm} style={{ flex: 2, padding: 12, borderRadius: 8, backgroundColor: ACCENT, alignItems: 'center' }}>
+                  <Text style={{ color: '#fff', fontWeight: '600', fontSize: 14 }}>Save Rhythm</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : (
+            <TouchableOpacity onPress={() => setRhythmForm(f => ({ ...f, visible: true }))} style={{ margin: 16, padding: 14, borderRadius: 10, backgroundColor: ACCENT, alignItems: 'center' }}>
+              <Text style={{ color: '#fff', fontWeight: '600', fontSize: 15 }}>+ Add Rhythm</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+        </KeyboardAvoidingView>
+      </Modal>
 
       <SettingsModal
         visible={settingsVisible}

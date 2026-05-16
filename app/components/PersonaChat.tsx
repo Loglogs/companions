@@ -8,7 +8,7 @@ import { router, useFocusEffect } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { useStore, getAccent, getPersonaEmoji, getPersonaName, MODE_ACCENTS } from '../lib/store';
+import { useStore, getAccent, MODE_EMOJIS, MODE_ACCENTS, getModeName, getModeEmoji, ConversationMeta } from '../lib/store';
 import { apiFetch } from '../lib/api';
 import { useTheme } from '../lib/theme';
 import { wsService } from '../lib/ws';
@@ -23,6 +23,10 @@ interface PersonaChatProps {
   persona: 'mentor' | 'shapeshifter';
 }
 
+type ProjectLeaf = { type: 'leaf', slug: string, name: string }
+type ProjectContainer = { type: 'container', isFolder?: boolean, slug: string, name: string, children: ProjectLeaf[] }
+type ProjectNode = ProjectLeaf | ProjectContainer
+
 export default function PersonaChat({ persona }: PersonaChatProps) {
   const insets = useSafeAreaInsets();
 
@@ -32,14 +36,13 @@ export default function PersonaChat({ persona }: PersonaChatProps) {
   const streamingText = useStore((s) => s.streamingText);
   const currentMode = useStore((s) => s.currentMode);
   const modes = useStore((s) => s.modes);
-  const personas = useStore((s) => s.personas);
   const conversations = useStore((s) => s.conversations);
   const activeConversationId = useStore((s) => s.activeConversationId);
   const setCredentials = useStore((s) => s.setCredentials);
   const addUserMessage = useStore((s) => s.addUserMessage);
+  const newConversation = useStore((s) => s.newConversation);
   const isDark = useStore((s) => s.isDark);
   const toggleTheme = useStore((s) => s.toggleTheme);
-  const loadConversations = useStore((s) => s.loadConversations);
   const currentProjectSlug = useStore((s) => s.currentProjectSlug);
   const setCurrentProject = useStore((s) => s.setCurrentProject);
   const requestedChatPersona = useStore((s) => s.requestedChatPersona);
@@ -53,18 +56,24 @@ export default function PersonaChat({ persona }: PersonaChatProps) {
   // Active persona toggle (Mentor tab can summon Shapeshifter)
   const [activePersona, setActivePersona] = useState<'mentor' | 'shapeshifter'>(persona);
 
-  // Project picker state (Saniel only)
+  // Project picker state (Mentor only)
   const [projectPickerVisible, setProjectPickerVisible] = useState(false);
-  const [projects, setProjects] = useState<{ slug: string; name: string }[]>([]);
+  const [projectTree, setProjectTree] = useState<ProjectNode[]>([]);
   const [projectsLoading, setProjectsLoading] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
+  const [createType, setCreateType] = useState<'project' | 'folder'>('project');
   const [creatingProject, setCreatingProject] = useState(false);
+  const [selectedParent, setSelectedParent] = useState<string | null>(null);
+  const [expandedContainers, setExpandedContainers] = useState<Set<string>>(new Set());
 
   // True once the server has confirmed our mode — suppresses premature auto-routing
   const modeSynced = useRef(false);
 
   const accent = getAccent(currentMode, modes);
   const theme = useTheme();
+  const personaEmoji = getModeEmoji(activePersona, modes);
+  const personaAccent = MODE_ACCENTS[activePersona] ?? accent;
+  const personaName = getModeName(activePersona, modes);
 
   useEffect(() => {
     async function init() {
@@ -85,14 +94,16 @@ export default function PersonaChat({ persona }: PersonaChatProps) {
   useFocusEffect(
     useCallback(() => {
       modeSynced.current = false;
-      // If Ruse canvas navigated here requesting Ruse persona, honour it once
+      // If Shapeshifter canvas navigated here requesting Shapeshifter persona, honour it once
+      let effectivePersona = persona;
       if (requestedChatPersona) {
+        effectivePersona = requestedChatPersona;
         setActivePersona(requestedChatPersona);
         setRequestedChatPersona(null);
       }
       if (switchModeTimer.current) clearTimeout(switchModeTimer.current);
       switchModeTimer.current = setTimeout(() => {
-        wsService.send({ type: 'switch_mode', mode: persona });
+        wsService.send({ type: 'switch_mode', mode: effectivePersona });
       }, 150);
       return () => {
         if (switchModeTimer.current) clearTimeout(switchModeTimer.current);
@@ -110,15 +121,18 @@ export default function PersonaChat({ persona }: PersonaChatProps) {
     }
     if (!modeSynced.current) return;
     if (currentMode === 'mentor') {
-      router.replace('/(tabs)/mentor');
+      router.replace('/(tabs)/saniel');
     } else if (currentMode === 'shapeshifter') {
-      router.replace('/(tabs)/shapeshifter');
+      router.replace('/(tabs)/ruse');
     }
   }, [currentMode, persona]);
 
-  const handleSend = useCallback((text: string) => {
-    addUserMessage(text);
-    wsService.send({ type: 'message', text, project: currentProjectSlug, persona: activePersona });
+  const handleSend = useCallback((text: string, file?: { name: string; content: string; mime: string }) => {
+    const isImage = file?.mime.startsWith('image/');
+    const fileIcon = isImage ? '🖼️' : '📄';
+    const displayText = file ? `${text ? text + '\n' : ''}${fileIcon} ${file.name}`.trim() : text;
+    addUserMessage(displayText);
+    wsService.send({ type: 'message', text, project: currentProjectSlug, persona: activePersona, fileName: file?.name, fileContent: file?.content, fileMime: file?.mime });
   }, [addUserMessage, currentProjectSlug, activePersona]);
 
   const handleAbort = useCallback(() => { wsService.send({ type: 'abort' }); }, []);
@@ -127,8 +141,8 @@ export default function PersonaChat({ persona }: PersonaChatProps) {
     setProjectsLoading(true);
     try {
       const res = await apiFetch('/wiki/projects');
-      const data = await res.json() as { ok: boolean; projects: { slug: string; name: string }[] };
-      setProjects(data.projects ?? []);
+      const data = await res.json() as { ok: boolean; projects: ProjectNode[] };
+      setProjectTree(data.projects ?? []);
     } catch {} finally {
       setProjectsLoading(false);
     }
@@ -141,18 +155,22 @@ export default function PersonaChat({ persona }: PersonaChatProps) {
     try {
       const res = await apiFetch('/wiki/projects', {
         method: 'POST',
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ name, type: createType, ...(selectedParent ? { parent: selectedParent } : {}) }),
       });
-      const data = await res.json() as { ok: boolean; slug: string; name: string };
+      const data = await res.json() as { ok: boolean; slug: string; name: string; type: string };
       if (data.ok && data.slug) {
         setNewProjectName('');
-        setProjectPickerVisible(false);
-        await setCurrentProject(data.slug);
+        setSelectedParent(null);
+        await loadProjects();
+        if (createType === 'project') {
+          setProjectPickerVisible(false);
+          await setCurrentProject(data.slug);
+        }
       }
     } catch {} finally {
       setCreatingProject(false);
     }
-  }, [newProjectName, setCurrentProject]);
+  }, [newProjectName, createType, selectedParent, setCurrentProject, loadProjects]);
 
   const handleSelectProject = useCallback(async (slug: string) => {
     setProjectPickerVisible(false);
@@ -196,7 +214,7 @@ export default function PersonaChat({ persona }: PersonaChatProps) {
               await apiFetch(`/wiki/projects/${encodeURIComponent(slug)}`, { method: 'DELETE' });
               await loadProjects();
               if (slug === currentProjectSlug) {
-                await setCurrentProject('inbox');
+                await setCurrentProject('general');
                 setProjectPickerVisible(false);
               }
             } catch {}
@@ -216,21 +234,17 @@ export default function PersonaChat({ persona }: PersonaChatProps) {
       onPanResponderRelease: (_, g) => {
         if (Math.abs(g.dx) < 40) return;
         if (persona === 'mentor' && g.dx > 0) {
-          router.replace('/(tabs)/tracker');   // Tracker is left of Mentor
+          router.replace('/(tabs)/lenda');   // Tracker is left of Mentor
         } else if (persona === 'mentor' && g.dx < 0) {
-          router.replace('/(tabs)/shapeshifter');
+          router.replace('/(tabs)/ruse');
         } else if (persona === 'shapeshifter' && g.dx > 0) {
-          router.replace('/(tabs)/mentor');
+          router.replace('/(tabs)/saniel');
         } else if (persona === 'shapeshifter' && g.dx < 0) {
-          router.replace('/(tabs)/keeper');    // Keeper is right of Shapeshifter
+          router.replace('/(tabs)/hive');    // Keeper is right of Shapeshifter
         }
       },
     })
   ).current;
-
-  const personaEmoji = getPersonaEmoji(activePersona, personas);
-  const personaAccent = MODE_ACCENTS[activePersona] ?? accent;
-  const personaName = getPersonaName(activePersona, personas);
 
   return (
     <KeyboardAvoidingView
@@ -255,7 +269,7 @@ export default function PersonaChat({ persona }: PersonaChatProps) {
             activeOpacity={0.7}
           >
             <Text style={[styles.headerProjectLabel, { color: theme.textDim }]} numberOfLines={1}>
-              📁 {currentProjectSlug === 'inbox' ? 'General' : currentProjectSlug.replace(/-/g, ' ')} ▾
+              📁 {currentProjectSlug === 'general' ? 'General' : currentProjectSlug.split('/').pop()!.replace(/-/g, ' ')} ▾
             </Text>
           </TouchableOpacity>
         ) : (
@@ -294,8 +308,8 @@ export default function PersonaChat({ persona }: PersonaChatProps) {
           >
             <Text style={styles.personaFabLabel}>
               {activePersona === 'mentor'
-                ? `${getPersonaEmoji('shapeshifter', personas)} ${getPersonaName('shapeshifter', personas)}`
-                : `${getPersonaEmoji('mentor', personas)} ${getPersonaName('mentor', personas)}`}
+                ? `Switch to ${getModeEmoji('shapeshifter', modes)} ${getModeName('shapeshifter', modes)}`
+                : `Switch to ${getModeEmoji('mentor', modes)} ${getModeName('mentor', modes)}`}
             </Text>
           </TouchableOpacity>
         )}
@@ -329,17 +343,47 @@ export default function PersonaChat({ persona }: PersonaChatProps) {
               </TouchableOpacity>
             </View>
 
-            {/* Create new project */}
+            {/* Create new project or folder */}
             <View style={[styles.createRow, { borderBottomColor: theme.border, backgroundColor: theme.surface }]}>
-              <TextInput
-                style={[styles.createInput, { color: theme.text, backgroundColor: theme.inputBg }]}
-                value={newProjectName}
-                onChangeText={setNewProjectName}
-                placeholder="New project name…"
-                placeholderTextColor={theme.textDim}
-                returnKeyType="done"
-                onSubmitEditing={handleCreateProject}
-              />
+              <View style={{ flex: 1, gap: 8 }}>
+                {/* Project / Folder toggle */}
+                <View style={{ flexDirection: 'row', gap: 6 }}>
+                  {(['project', 'folder'] as const).map(t => {
+                    const active = createType === t;
+                    return (
+                      <TouchableOpacity
+                        key={t}
+                        onPress={() => setCreateType(t)}
+                        style={[styles.typeToggle, { borderColor: active ? personaAccent : theme.border, backgroundColor: active ? personaAccent : 'transparent' }]}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[styles.typeToggleLabel, { color: active ? '#fff' : theme.text }]}>
+                          {t === 'project' ? '📄 Project' : '📁 Folder'}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+                {selectedParent != null && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={[styles.parentTag, { backgroundColor: theme.border, color: theme.textDim }]}>
+                      under {projectTree.find(n => n.slug === selectedParent)?.name ?? selectedParent}
+                    </Text>
+                    <TouchableOpacity onPress={() => setSelectedParent(null)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+                      <Text style={{ color: theme.textDim, fontSize: 13 }}>✕</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+                <TextInput
+                  style={[styles.createInput, { color: theme.text, backgroundColor: theme.inputBg }]}
+                  value={newProjectName}
+                  onChangeText={setNewProjectName}
+                  placeholder={createType === 'folder' ? 'Folder name…' : 'Project name…'}
+                  placeholderTextColor={theme.textDim}
+                  returnKeyType="done"
+                  onSubmitEditing={handleCreateProject}
+                />
+              </View>
               <TouchableOpacity
                 style={[styles.createBtn, { backgroundColor: personaAccent }, (!newProjectName.trim() || creatingProject) && styles.createBtnDisabled]}
                 onPress={handleCreateProject}
@@ -355,64 +399,116 @@ export default function PersonaChat({ persona }: PersonaChatProps) {
               <View style={styles.centeredFlex}>
                 <ActivityIndicator color={theme.textDim} />
               </View>
-            ) : (
-              <FlatList
-                data={projects}
-                keyExtractor={item => item.slug}
-                refreshControl={<RefreshControl refreshing={projectsLoading} onRefresh={loadProjects} tintColor={theme.textDim} />}
-                renderItem={({ item }) => {
-                  const isActive = item.slug === currentProjectSlug;
-                  return (
-                    <TouchableOpacity
-                      style={[styles.projectRow, { borderBottomColor: theme.border }, isActive && { backgroundColor: theme.surface }]}
-                      onPress={() => handleSelectProject(item.slug)}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={[styles.projectRowIcon, { color: isActive ? personaAccent : theme.textDim }]}>📁</Text>
-                      <View style={styles.projectRowBody}>
-                        <Text style={[styles.projectRowName, { color: isActive ? personaAccent : theme.text }]}>{item.name}</Text>
-                        <Text style={[styles.projectRowSlug, { color: theme.textFaint }]}>{item.slug}</Text>
-                      </View>
-                      {isActive && <Text style={[styles.projectRowCheck, { color: personaAccent }]}>✓</Text>}
+            ) : (() => {
+                type FlatRow =
+                  | { kind: 'container', slug: string, name: string, expanded: boolean, isFolder: boolean }
+                  | { kind: 'leaf', slug: string, name: string, indent: number }
+                const flatRows: FlatRow[] = [];
+                for (const node of projectTree) {
+                  if (node.type === 'container') {
+                    const expanded = expandedContainers.has(node.slug);
+                    flatRows.push({ kind: 'container', slug: node.slug, name: node.name, expanded, isFolder: node.isFolder ?? false });
+                    if (expanded) {
+                      for (const child of node.children) {
+                        flatRows.push({ kind: 'leaf', slug: child.slug, name: child.name, indent: 1 });
+                      }
+                    }
+                  } else {
+                    flatRows.push({ kind: 'leaf', slug: node.slug, name: node.name, indent: 0 });
+                  }
+                }
+                return (
+                  <FlatList
+                    data={flatRows}
+                    keyExtractor={item => item.slug}
+                    refreshControl={<RefreshControl refreshing={projectsLoading} onRefresh={loadProjects} tintColor={theme.textDim} />}
+                    renderItem={({ item }) => {
+                      if (item.kind === 'container') {
+                        const isActive = !item.isFolder && item.slug === currentProjectSlug;
+                        const toggleExpand = () => setExpandedContainers(prev => {
+                          const next = new Set(prev); next.has(item.slug) ? next.delete(item.slug) : next.add(item.slug); return next;
+                        });
+                        return (
+                          <View style={[styles.projectRow, { borderBottomColor: theme.border }, isActive && { backgroundColor: theme.surface }]}>
+                            <TouchableOpacity
+                              style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 }}
+                              onPress={() => item.isFolder ? toggleExpand() : handleSelectProject(item.slug)}
+                              activeOpacity={0.7}
+                            >
+                              <Text style={[styles.projectRowIcon, { color: isActive ? personaAccent : theme.textDim }]}>📁</Text>
+                              <View style={styles.projectRowBody}>
+                                <Text style={[styles.projectRowName, { color: isActive ? personaAccent : theme.text }]}>{item.name}</Text>
+                                <Text style={[styles.projectRowSlug, { color: theme.textFaint }]}>{item.slug}</Text>
+                              </View>
+                            </TouchableOpacity>
+                            {isActive && <Text style={[styles.projectRowCheck, { color: personaAccent }]}>✓</Text>}
+                            {!item.isFolder && (
+                              <TouchableOpacity hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} onPress={toggleExpand}>
+                                <Text style={[styles.projectRowMenu, { color: theme.textDim }]}>{item.expanded ? '▼' : '▶'}</Text>
+                              </TouchableOpacity>
+                            )}
+                            {item.isFolder && (
+                              <Text style={[styles.projectRowMenu, { color: theme.textDim }]}>{item.expanded ? '▼' : '▶'}</Text>
+                            )}
+                            <TouchableOpacity
+                              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                              onPress={() => setSelectedParent(item.slug)}
+                            >
+                              <Text style={[styles.projectRowMenu, { color: theme.textDim }]}>+</Text>
+                            </TouchableOpacity>
+                          </View>
+                        );
+                      }
+                      // leaf
+                      const isActive = item.slug === currentProjectSlug;
+                      return (
+                        <TouchableOpacity
+                          style={[styles.projectRow, { borderBottomColor: theme.border, paddingLeft: 16 + item.indent * 16 }, isActive && { backgroundColor: theme.surface }]}
+                          onPress={() => handleSelectProject(item.slug)}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={[styles.projectRowIcon, { color: isActive ? personaAccent : theme.textDim }]}>📁</Text>
+                          <View style={styles.projectRowBody}>
+                            <Text style={[styles.projectRowName, { color: isActive ? personaAccent : theme.text }]}>{item.name}</Text>
+                            <Text style={[styles.projectRowSlug, { color: theme.textFaint }]}>{item.slug}</Text>
+                          </View>
+                          {isActive && <Text style={[styles.projectRowCheck, { color: personaAccent }]}>✓</Text>}
+                          <TouchableOpacity
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                            onPress={() => Alert.alert(item.name, undefined, [
+                              { text: 'Rename', onPress: () => handleRenameProject(item.slug, item.name) },
+                              { text: 'Delete', style: 'destructive', onPress: () => handleDeleteProject(item.slug, item.name) },
+                              { text: 'Cancel', style: 'cancel' },
+                            ])}
+                          >
+                            <Text style={[styles.projectRowMenu, { color: theme.textDim }]}>⋯</Text>
+                          </TouchableOpacity>
+                        </TouchableOpacity>
+                      );
+                    }}
+                    ListHeaderComponent={
                       <TouchableOpacity
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                        onPress={() => Alert.alert(
-                          item.name,
-                          undefined,
-                          [
-                            { text: 'Rename', onPress: () => handleRenameProject(item.slug, item.name) },
-                            { text: 'Delete', style: 'destructive', onPress: () => handleDeleteProject(item.slug, item.name) },
-                            { text: 'Cancel', style: 'cancel' },
-                          ],
-                        )}
+                        style={[styles.projectRow, { borderBottomColor: theme.border }, currentProjectSlug === 'general' && { backgroundColor: theme.surface }]}
+                        onPress={() => handleSelectProject('general')}
+                        activeOpacity={0.7}
                       >
-                        <Text style={[styles.projectRowMenu, { color: theme.textDim }]}>⋯</Text>
+                        <Text style={[styles.projectRowIcon, { color: currentProjectSlug === 'general' ? personaAccent : theme.textDim }]}>💬</Text>
+                        <View style={styles.projectRowBody}>
+                          <Text style={[styles.projectRowName, { color: currentProjectSlug === 'general' ? personaAccent : theme.text }]}>General</Text>
+                          <Text style={[styles.projectRowSlug, { color: theme.textFaint }]}>general</Text>
+                        </View>
+                        {currentProjectSlug === 'general' && <Text style={[styles.projectRowCheck, { color: personaAccent }]}>✓</Text>}
                       </TouchableOpacity>
-                    </TouchableOpacity>
-                  );
-                }}
-                ListHeaderComponent={
-                  <TouchableOpacity
-                    style={[styles.projectRow, { borderBottomColor: theme.border }, currentProjectSlug === 'inbox' && { backgroundColor: theme.surface }]}
-                    onPress={() => handleSelectProject('inbox')}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[styles.projectRowIcon, { color: currentProjectSlug === 'inbox' ? personaAccent : theme.textDim }]}>📁</Text>
-                    <View style={styles.projectRowBody}>
-                      <Text style={[styles.projectRowName, { color: currentProjectSlug === 'inbox' ? personaAccent : theme.text }]}>General</Text>
-                      <Text style={[styles.projectRowSlug, { color: theme.textFaint }]}>inbox</Text>
-                    </View>
-                    {currentProjectSlug === 'inbox' && <Text style={[styles.projectRowCheck, { color: personaAccent }]}>✓</Text>}
-                  </TouchableOpacity>
-                }
-                ListEmptyComponent={
-                  <View style={styles.centeredFlex}>
-                    <Text style={[styles.emptyText, { color: theme.textDim }]}>No projects yet.{'\n'}Create one above.</Text>
-                  </View>
-                }
-                contentContainerStyle={projects.length === 0 ? styles.emptyListContent : undefined}
-              />
-            )}
+                    }
+                    ListEmptyComponent={
+                      <View style={styles.centeredFlex}>
+                        <Text style={[styles.emptyText, { color: theme.textDim }]}>No projects yet.{'\n'}Create one above.</Text>
+                      </View>
+                    }
+                    contentContainerStyle={flatRows.length === 0 ? styles.emptyListContent : undefined}
+                  />
+                );
+              })()}
           </View>
         </Modal>
       )}
@@ -485,17 +581,27 @@ const styles = StyleSheet.create({
   },
   modalHeaderBtn: { minWidth: 44, alignItems: 'flex-end' },
   modalHeaderBtnLabel: { fontFamily: 'DMSans_500Medium', fontSize: 16 },
+  // Project/Folder type toggle
+  typeToggle: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  typeToggleLabel: {
+    fontFamily: 'DMSans_500Medium',
+    fontSize: 13,
+  },
   // Create project row
   createRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-end',
     gap: 10,
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   createInput: {
-    flex: 1,
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderRadius: 8,
@@ -533,10 +639,18 @@ const styles = StyleSheet.create({
   centeredFlex: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
   emptyText: { fontFamily: 'DMSans_400Regular', fontSize: 15, textAlign: 'center' },
   emptyListContent: { flexGrow: 1 },
+  parentTag: {
+    fontFamily: 'DMSans_400Regular',
+    fontSize: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    overflow: 'hidden',
+  },
   personaFab: {
     position: 'absolute',
-    bottom: 12,
-    right: 16,
+    top: 12,
+    left: 16,
     paddingHorizontal: 18,
     paddingVertical: 10,
     borderRadius: 22,

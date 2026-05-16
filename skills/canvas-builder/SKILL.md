@@ -1,65 +1,68 @@
 ---
 name: canvas-builder
-description: Teaches agents how to output structured canvas definitions for the Ruse tab
+description: Teaches agents how to output structured canvas definitions for the Shapeshifter tab
 ---
 
-## Canvas Builder
+## Reading the Current Canvas
 
-When working on a project with the user, you can build and update a visual canvas that appears in their Ruse tab. The canvas persists between conversations and builds up over time as the project develops.
+The canvas is a file in the vault. Before updating, always read it first:
+- Path: `projects/<current-project-slug>/canvas.json`
+- Use the `read` tool to load it, then emit the full updated canvas with your changes merged in.
+- If the file doesn't exist yet, start fresh.
 
-### When to update the canvas
+## Critical Rules
 
-Update the canvas when:
-- The user asks you to add something to their canvas or Ruse tab
-- You produce a plan, outline, checklist, or structured artifact that belongs in the project space
-- The project's scope or status changes meaningfully
-- A key decision, reference, or resource should be permanently visible
+- Output `<canvas>` as a **raw tag** — never inside backticks or code fences.
+- Put `<canvas>` at the **END** of your response, after all conversational text.
+- Always include **ALL existing blocks** — the full canvas replaces the previous one. Never drop blocks the user hasn't removed.
+- IDs are short and stable: `b1`, `b2`, `b3` for blocks; `t1`, `t2` for task items.
 
-Don't update the canvas on every message — only when there's something worth adding.
+## When to Emit a Canvas
 
-### Canvas output format
+- User asks to add something to their canvas or Shapeshifter tab.
+- You produce a plan, outline, checklist, or structured artifact worth persisting.
+- A key decision, reference, or resource should stay permanently visible.
+- The project's scope or status changes meaningfully.
 
-At the END of your response (after your conversational text), output a canvas block:
+## Output Format
 
-```
 <canvas>
 {
   "blocks": [
-    { "id": "b1", "type": "markdown", "content": "# Project Title\n\nOne-line description." },
+    { "id": "b1", "type": "markdown", "content": "# Title\n\nOne-line description." },
     { "id": "b2", "type": "tasks", "title": "Next steps", "items": [
       { "id": "t1", "text": "Do the thing", "done": false }
     ]},
-    { "id": "b3", "type": "note", "title": "Key insight", "content": "The main idea in one sentence.", "color": "amber" }
+    { "id": "b3", "type": "note", "title": "Key insight", "content": "Main idea.", "color": "amber" }
   ]
 }
 </canvas>
-```
 
-### Rules
+## Block Types
 
-- Always include ALL existing blocks when updating — the full canvas replaces the previous one. Don't drop blocks the user hasn't removed.
-- Generate short, stable IDs: `b1`, `b2`, `b3` for blocks; `t1`, `t2` for task items.
-- The `<canvas>` block is invisible to the user in chat — it only appears in their Ruse tab.
-- Put the `<canvas>` block at the very end of your response, after everything else.
-- Never put the `<canvas>` block inside your regular message text.
+This is a **fixed block system** — 10 types total. You cannot render arbitrary UI; compose these blocks to represent any content.
 
-### Block types
+| type | required fields | optional fields | visual |
+|------|----------------|-----------------|--------|
+| `markdown` | `content` | — | Rich text with headers, bold, lists, inline code |
+| `tasks` | `items` ({id, text, done}) | `title` | Interactive checklist with tap-to-toggle checkboxes |
+| `note` | `content` | `title`, `color` (amber/blue/green/red) | Coloured left-border callout box |
+| `links` | `items` ({id, label, url}) | `title` | List of labelled URL rows |
+| `code` | `content` | `language`, `title` | Dark-background code block with optional language label |
+| `section` | — | `label` | Horizontal divider with optional centred label |
+| `button` | — | `label`, `content`, `action` ('chat'/'file'), `file` (vault path) | Tappable CTA; opens chat (default) or a vault file |
+| `filetabs` | `tabs` ({id, label, file}) | — | Tab strip that loads different vault files per tab |
+| `input` | — | `title` | Multi-line text field the user can type into; content saved back to canvas |
+| `html` | `content` (complete HTML string) | `height` (px, omit to auto-size) | Sandboxed WebView — renders arbitrary HTML/CSS/JS inline |
 
-| type | required fields | optional fields |
-|------|----------------|-----------------|
-| `markdown` | `content` (markdown string) | — |
-| `tasks` | `items` (array of {id, text, done}) | `title` |
-| `note` | `content` | `title`, `color` (amber/blue/green/red) |
-| `links` | `items` (array of {id, label, url}) | `title` |
-| `code` | `content` | `language`, `title` |
-| `section` | — | `label` |
-| `button` | — | `label` (button text), `content` (optional description above) |
+**input block note:** Omit `content` when creating — the app fills it in as the user types. Schema: `{ "id": "b1", "type": "input", "title": "Optional label" }`
 
-> The `button` block renders a tappable call-to-action. When tapped it opens a chat with Ruse. Use it when you want the user to take a specific action related to the project — e.g. "Start the session", "Review this with Ruse", "Begin the writing sprint".
+**html block note:** Write complete, self-contained HTML — all CSS in `<style>` tags, all JS in `<script>` tags, no external CDN links. Omit `height` to let the app measure automatically. Use for charts, tables, custom layouts, or anything the other block types can't express.
 
-### Example: talk prep canvas
+## Example — Talk Prep Canvas
 
-```
+Your conversational reply goes here, then immediately after:
+
 <canvas>
 {
   "blocks": [
@@ -73,4 +76,7 @@ At the END of your response (after your conversational text), output a canvas bl
   ]
 }
 </canvas>
-```
+
+## Composition Note
+
+This is a fixed block system with 10 types. Agents cannot render arbitrary UI — only compose these blocks. Any content that doesn't fit a block type should be expressed as `markdown`.

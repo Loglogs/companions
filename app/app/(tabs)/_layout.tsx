@@ -4,8 +4,9 @@ import { Tabs, router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as SecureStore from 'expo-secure-store';
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../../lib/theme';
-import { getPersonaEmoji, useStore } from '../../lib/store';
+import { useStore, getModeEmoji } from '../../lib/store';
 import { wsService } from '../../lib/ws';
 import { GlobalCaptureModal } from '../../components/GlobalCaptureModal';
 
@@ -20,15 +21,18 @@ export default function TabsLayout() {
   const theme = useTheme();
   const setIsDark = useStore((s) => s.setIsDark);
   const setCredentials = useStore((s) => s.setCredentials);
-  const personas = useStore((s) => s.personas);
-  const hydratePersonas = useStore((s) => s.hydratePersonas);
-  const syncPersonas = useStore((s) => s.syncPersonas);
+  const setModes = useStore((s) => s.setModes);
+  const modes = useStore((s) => s.modes);
 
-  // Load credentials once for the whole tab layout — ensures Tracker and Keeper
-  // can reach the server without needing to visit Mentor/Shapeshifter first.
+  // Load credentials once for the whole tab layout — ensures all tabs
+  // can reach the server without needing to visit specific tabs first.
   useEffect(() => {
     async function init() {
-      await hydratePersonas();
+      // Restore cached modes immediately so tab icons show before WS connects
+      const cached = await AsyncStorage.getItem('cachedModes');
+      if (cached) {
+        try { setModes(JSON.parse(cached)); } catch {}
+      }
       const storedUrl = await SecureStore.getItemAsync('serverUrl');
       const storedToken = await SecureStore.getItemAsync('token');
       if (!storedUrl || !storedToken) {
@@ -36,7 +40,6 @@ export default function TabsLayout() {
         return;
       }
       setCredentials(storedUrl, storedToken);
-      await syncPersonas();
       wsService.connect();
     }
     init();
@@ -80,28 +83,28 @@ export default function TabsLayout() {
           name="tracker"
           options={{
             tabBarActiveTintColor: '#42A5F5',
-            tabBarIcon: ({ focused }) => <TabIcon emoji={getPersonaEmoji('tracker', personas)} focused={focused} />,
+            tabBarIcon: ({ focused }) => <TabIcon emoji={getModeEmoji('tracker', modes) || '🐙'} focused={focused} />,
           }}
         />
         <Tabs.Screen
           name="mentor"
           options={{
             tabBarActiveTintColor: '#4CAF50',
-            tabBarIcon: ({ focused }) => <TabIcon emoji={getPersonaEmoji('mentor', personas)} focused={focused} />,
+            tabBarIcon: ({ focused }) => <TabIcon emoji={getModeEmoji('mentor', modes) || '🐢'} focused={focused} />,
           }}
         />
         <Tabs.Screen
           name="shapeshifter"
           options={{
             tabBarActiveTintColor: '#FF6135',
-            tabBarIcon: ({ focused }) => <TabIcon emoji={getPersonaEmoji('shapeshifter', personas)} focused={focused} />,
+            tabBarIcon: ({ focused }) => <TabIcon emoji={getModeEmoji('shapeshifter', modes) || '🦞'} focused={focused} />,
           }}
         />
         <Tabs.Screen
           name="keeper"
           options={{
             tabBarActiveTintColor: '#FFD54F',
-            tabBarIcon: ({ focused }) => <TabIcon emoji={getPersonaEmoji('keeper', personas)} focused={focused} />,
+            tabBarIcon: ({ focused }) => <TabIcon emoji={getModeEmoji('keeper', modes) || '🐝'} focused={focused} />,
           }}
         />
       </Tabs>

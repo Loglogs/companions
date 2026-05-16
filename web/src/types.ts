@@ -12,6 +12,7 @@ export interface ConversationMeta {
   id: string
   startedAt: number
   title: string
+  folder?: string
 }
 
 export interface AppState {
@@ -45,3 +46,6 @@ export type AppAction =
   | { type: 'SET_CONVERSATIONS'; conversations: ConversationMeta[]; activeId: string | null; messages: Message[] }
   | { type: 'SET_ACTIVE_CONVERSATION'; id: string; messages: Message[] }
   | { type: 'NEW_CONVERSATION'; meta: ConversationMeta }
+  | { type: 'RENAME_CONVERSATION'; id: string; title: string }
+  | { type: 'DELETE_CONVERSATION'; id: string }
+  | { type: 'MOVE_CONVERSATION'; id: string; folder: string | undefined }

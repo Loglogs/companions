@@ -7,37 +7,75 @@ import {
   Animated,
   StyleSheet,
 } from 'react-native';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import { useTheme } from '../lib/theme';
+
+export interface AttachedFile {
+  name: string;
+  content: string;
+  mime: string;
+}
 
 interface InputBarProps {
   accent: string;
   isStreaming: boolean;
-  onSend: (text: string) => void;
+  onSend: (text: string, file?: AttachedFile) => void;
   onAbort: () => void;
 }
 
 export default function InputBar({ accent, isStreaming, onSend, onAbort }: InputBarProps) {
   const [text, setText] = useState('');
+  const [file, setFile] = useState<AttachedFile | null>(null);
   const inputRef = useRef<TextInput>(null);
-  const canSend = text.trim().length > 0 && !isStreaming;
+  const canSend = (text.trim().length > 0 || file !== null) && !isStreaming;
   const theme = useTheme();
+
+  async function handlePickFile() {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: ['text/*', 'application/json', 'application/javascript',
+             'application/x-python', 'application/pdf', 'image/*', '*/*'],
+      copyToCacheDirectory: true,
+    });
+    if (result.canceled || !result.assets?.length) return;
+    const asset = result.assets[0];
+    const mime = asset.mimeType ?? '';
+    const isImage = mime.startsWith('image/');
+    const content = await FileSystem.readAsStringAsync(asset.uri, {
+      encoding: isImage ? 'base64' : 'utf8',
+    } as any);
+    setFile({ name: asset.name, content, mime });
+  }
 
   function handleSend() {
     if (!canSend) return;
-    const trimmed = text.trim();
+    onSend(text.trim(), file ?? undefined);
     setText('');
-    onSend(trimmed);
+    setFile(null);
   }
 
   return (
     <View style={styles.wrapper}>
+      {file && (
+        <View style={[styles.fileChip, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <Text style={[styles.fileChipText, { color: theme.text }]} numberOfLines={1}>
+            📄 {file.name}
+          </Text>
+          <TouchableOpacity onPress={() => setFile(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Text style={[styles.fileChipRemove, { color: theme.textDim }]}>✕</Text>
+          </TouchableOpacity>
+        </View>
+      )}
       <View style={styles.inputRow}>
+        <TouchableOpacity style={styles.attachBtn} onPress={handlePickFile} disabled={isStreaming}>
+          <Text style={[styles.attachIcon, { color: file ? accent : theme.textDim }]}>⊕</Text>
+        </TouchableOpacity>
         <TextInput
           ref={inputRef}
           style={[styles.input, { backgroundColor: theme.inputBg, color: theme.text }]}
           value={text}
           onChangeText={setText}
-          placeholder="Say something..."
+          placeholder={file ? 'Add a message...' : 'Say something...'}
           placeholderTextColor={theme.textDim}
           multiline
           maxLength={2000}
@@ -45,7 +83,6 @@ export default function InputBar({ accent, isStreaming, onSend, onAbort }: Input
           blurOnSubmit={false}
           returnKeyType="send"
         />
-
         {isStreaming ? (
           <TouchableOpacity
             style={[styles.actionBtn, { backgroundColor: theme.surfaceAlt }]}
@@ -73,10 +110,40 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     paddingTop: 8,
   },
+  fileChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    marginBottom: 6,
+    maxWidth: '85%',
+    gap: 6,
+  },
+  fileChipText: {
+    fontSize: 13,
+    fontFamily: 'DMSans_400Regular',
+    flexShrink: 1,
+  },
+  fileChipRemove: {
+    fontSize: 12,
+  },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: 8,
+  },
+  attachBtn: {
+    width: 36,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  attachIcon: {
+    fontSize: 24,
+    lineHeight: 28,
   },
   input: {
     flex: 1,
