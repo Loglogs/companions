@@ -45,15 +45,20 @@ Each ships with a default name, emoji, and character. Rename them and tune the p
 
 ## 🐦 Tracker — Daily rhythm and reflection
 
-<p align="center">
-  <img src="docs/screenshots/Tracker.png" alt="Tracker tab" width="300">
-</p>
+<table>
+<tr>
+<td width="260" valign="top"><img src="docs/screenshots/Tracker.png" alt="Tracker tab" width="240"></td>
+<td valign="top">
 
 - **Weekly phrase** — a short line to sit with and return to through the week
 - **Calendar** — pulls in Google Calendar events so the day has context and shape
 - **To-dos** — p1 / p2 / p3 priorities; incomplete tasks carry forward automatically
 - **Rhythms** — recurring commitments across any cadence: daily, weekly, monthly, yearly
 - **Haiku** — three lines written fresh each morning as a quiet anchor for the day
+
+</td>
+</tr>
+</table>
 
 ---
 
@@ -63,9 +68,10 @@ Two agents, one shared space. They're opposites by design — Mentor slows you d
 
 ### 💬 Conversation
 
-<p align="center">
-  <img src="docs/screenshots/Mentor.png" alt="Chat tab — Mentor and Shapeshifter" width="300">
-</p>
+<table>
+<tr>
+<td width="260" valign="top"><img src="docs/screenshots/Mentor.png" alt="Chat tab — Mentor and Shapeshifter" width="240"></td>
+<td valign="top">
 
 The Chat tab lets you talk to either. Switch between them at any point.
 
@@ -73,11 +79,16 @@ The Chat tab lets you talk to either. Switch between them at any point.
 
 **Shapeshifter** infers your intent and acts. States one assumption in a line, then builds. Pivots fast if the read was off.
 
+</td>
+</tr>
+</table>
+
 ### 🎨 Canvas — React app playground
 
-<p align="center">
-  <img src="docs/screenshots/shapershifter.png" alt="Shapeshifter canvas" width="300">
-</p>
+<table>
+<tr>
+<td width="260" valign="top"><img src="docs/screenshots/shapershifter.png" alt="Shapeshifter canvas" width="240"></td>
+<td valign="top">
 
 Shapeshifter's default output is not a chat reply. It's a persistent, structured workspace saved to your vault — a live app rendered inside the tab.
 
@@ -98,23 +109,32 @@ Canvases are built from 10 composable blocks:
 
 The `html` block is where it becomes a playground. Write a self-contained React component, a chart, a custom layout — anything. Shapeshifter generates it, the app renders it live.
 
+</td>
+</tr>
+</table>
+
 ---
 
 ## 🐝 Keeper — Personal wiki
 
-<p align="center">
-  <img src="docs/screenshots/Keeper-wiki.png" alt="Keeper wiki" width="300">
-  &nbsp;&nbsp;
-  <img src="docs/screenshots/keeper-notes.png" alt="Keeper raw captures" width="300">
-  &nbsp;&nbsp;
-  <img src="docs/screenshots/Keeper-web.png" alt="Keeper knowledge graph" width="300">
-</p>
+<table>
+<tr>
+<td width="260" valign="top"><img src="docs/screenshots/Keeper-wiki.png" alt="Keeper wiki" width="240"></td>
+<td valign="top">
 
 Drop in raw notes, voice dumps, or rough ideas. Keeper extracts the signal, organises it into the wiki, and keeps the index clean. It surfaces forgotten knowledge — prioritising older, reinforced memories you've likely lost track of.
 
 The wiki follows a Johnny Decimal structure so nothing gets lost in an undifferentiated pile:
 
 `01-identity` · `02-knowledge` · `03-projects` · `04-areas` · `05-relationships` · `06-creativity` · `07-systems` · `08-resources` · `09-media` · `10-events` · `11-questions` · `99-archive`
+
+<img src="docs/screenshots/keeper-notes.png" alt="Keeper raw captures" width="180">
+&nbsp;
+<img src="docs/screenshots/Keeper-web.png" alt="Keeper knowledge graph" width="180">
+
+</td>
+</tr>
+</table>
 
 ---
 
