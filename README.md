@@ -24,11 +24,13 @@ Companions runs on your machine. Your vault is plain markdown files. No cloud ac
 **Context gets lost when your tools don't talk to each other.**
 All four agents share one vault. A calendar event from Tracker shows up if Mentor needs context. A draft from Shapeshifter becomes a wiki entry Keeper can find later.
 
-<!-- screenshot: hero — all four tabs on mobile -->
-
 ---
 
 ## The four personas
+
+<p align="center">
+  <img src="docs/screenshots/four-agents.png" alt="The four Companions personas" width="220">
+</p>
 
 Each ships with a default name, emoji, and character. Rename them and tune the personality during setup or any time from the dashboard.
 
@@ -39,13 +41,13 @@ Each ships with a default name, emoji, and character. Rename them and tune the p
 | 🦊 | **Shapeshifter** | Bold, fast, a little mischievous. Infers intent and acts — it already built it before Mentor finished the first question. |
 | 🐝 | **Keeper** | Organised, quietly curious. Tends the knowledge vault so you don't have to remember everything yourself. |
 
-<!-- screenshot: personas-table -->
-
 ---
 
 ## 🐦 Tracker — Daily rhythm and reflection
 
-<!-- screenshot: tracker-tab -->
+<p align="center">
+  <img src="docs/screenshots/Tracker.png" alt="Tracker tab" width="300">
+</p>
 
 - **Weekly phrase** — a short line to sit with and return to through the week
 - **Calendar** — pulls in Google Calendar events so the day has context and shape
@@ -59,11 +61,11 @@ Each ships with a default name, emoji, and character. Rename them and tune the p
 
 Two agents, one shared space. They're opposites by design — Mentor slows you down, Shapeshifter speeds you up. Which one you reach for depends on whether you need to understand something or build something.
 
-<!-- screenshot: mentor-shapeshifter-pair -->
-
 ### 💬 Conversation
 
-<!-- screenshot: chat-tab -->
+<p align="center">
+  <img src="docs/screenshots/Mentor.png" alt="Chat tab — Mentor and Shapeshifter" width="300">
+</p>
 
 The Chat tab lets you talk to either. Switch between them at any point.
 
@@ -73,7 +75,9 @@ The Chat tab lets you talk to either. Switch between them at any point.
 
 ### 🎨 Canvas — React app playground
 
-<!-- screenshot: canvas-tab -->
+<p align="center">
+  <img src="docs/screenshots/Shapeshifter.png" alt="Shapeshifter canvas" width="300">
+</p>
 
 Shapeshifter's default output is not a chat reply. It's a persistent, structured workspace saved to your vault — a live app rendered inside the tab.
 
@@ -98,7 +102,13 @@ The `html` block is where it becomes a playground. Write a self-contained React 
 
 ## 🐝 Keeper — Personal wiki
 
-<!-- screenshot: keeper-tab -->
+<p align="center">
+  <img src="docs/screenshots/Keeper-wiki.png" alt="Keeper wiki" width="300">
+  &nbsp;&nbsp;
+  <img src="docs/screenshots/Keeper-raw.png" alt="Keeper raw captures" width="300">
+  &nbsp;&nbsp;
+  <img src="docs/screenshots/Keeper-web.png" alt="Keeper knowledge graph" width="300">
+</p>
 
 Drop in raw notes, voice dumps, or rough ideas. Keeper extracts the signal, organises it into the wiki, and keeps the index clean. It surfaces forgotten knowledge — prioritising older, reinforced memories you've likely lost track of.
 
@@ -109,8 +119,6 @@ The wiki follows a Johnny Decimal structure so nothing gets lost in an undiffere
 ---
 
 ## One vault, shared by all four
-
-<!-- screenshot: vault-structure -->
 
 ```text
 vault/
@@ -140,13 +148,9 @@ cd companions/server && npm install && npm run build && npm start
 
 Then open `http://localhost:3000/install`.
 
-<!-- screenshot: install-wizard -->
-
 ---
 
 ## Bring your own model
-
-<!-- screenshot: models-dashboard -->
 
 | Provider | Example |
 |---|---|
@@ -181,8 +185,6 @@ VISION_MODEL_KEY=your-omlx-api-key
 - **Dashboard:** `http://<your-server>/dashboard` — manage vault, models, personas, and updates
 
 Recommended remote access: [Tailscale](https://tailscale.com/) — the wizard detects it automatically.
-
-<!-- screenshot: qr-pairing -->
 
 ---
 
