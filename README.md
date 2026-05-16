@@ -76,7 +76,7 @@ The Chat tab lets you talk to either. Switch between them at any point.
 ### 🎨 Canvas — React app playground
 
 <p align="center">
-  <img src="docs/screenshots/Shapeshifter.png" alt="Shapeshifter canvas" width="300">
+  <img src="docs/screenshots/shapershifter.png" alt="Shapeshifter canvas" width="300">
 </p>
 
 Shapeshifter's default output is not a chat reply. It's a persistent, structured workspace saved to your vault — a live app rendered inside the tab.
@@ -105,7 +105,7 @@ The `html` block is where it becomes a playground. Write a self-contained React 
 <p align="center">
   <img src="docs/screenshots/Keeper-wiki.png" alt="Keeper wiki" width="300">
   &nbsp;&nbsp;
-  <img src="docs/screenshots/Keeper-raw.png" alt="Keeper raw captures" width="300">
+  <img src="docs/screenshots/keeper-notes.png" alt="Keeper raw captures" width="300">
   &nbsp;&nbsp;
   <img src="docs/screenshots/Keeper-web.png" alt="Keeper knowledge graph" width="300">
 </p>
