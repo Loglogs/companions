@@ -19,12 +19,12 @@
 Reflection needs patience. Creation needs guardrails and momentum. Knowledge needs structure. It's not that most tools can't do it, but this one is the one that helps my brain.
 
 **Your data shouldn't live on someone else's server.**
-Companions runs on your machine. Your vault is plain markdown files. No cloud account, no subscription, no lock-in. All local!
+Companions runs on your machine. Your vault is plain markdown files. No cloud account, no subscription, no lock-in. All local.
 
 **Context gets lost when your tools don't talk to each other.**
 All four agents share one vault. A calendar event from Tracker shows up if Mentor needs context. A draft from Shapeshifter becomes a wiki entry Keeper can find later.
 
-<!-- screenshot: hero image — all four agent tabs side by side on mobile -->
+<!-- screenshot: hero — all four tabs on mobile -->
 
 ---
 
@@ -34,48 +34,79 @@ Each ships with a default name, emoji, and character. Rename them and tune the p
 
 | | Persona | Character |
 |---|---|---|
+| 🐦 | **Tracker** | Precise and grounding. Holds your day's shape — tasks, calendar, rhythm, and reflection. |
 | 🐸 | **Mentor** | Patient, ADHD-aware. Slows you down. One step, one next action, never a wall of text. |
 | 🦊 | **Shapeshifter** | Bold, fast, a little mischievous. Infers intent and acts — it already built it before Mentor finished the first question. |
 | 🐝 | **Keeper** | Organised, quietly curious. Tends the knowledge vault so you don't have to remember everything yourself. |
-| 🐦 | **Tracker** | Precise and grounding. Holds your day's shape — tasks, calendar, rhythm, reflection. |
 
-<!-- screenshot: four-agents — tabs side by side -->
+<!-- screenshot: personas-table -->
 
 ---
 
-## What each one does
+## 🐦 Tracker — Daily rhythm and reflection
 
-### 🐸 Mentor
-- Asks the right question before touching anything
-- One step at a time — never bundles two concepts into one message
-- Ends every response with exactly one next action
-- `Step X of Y` numbering so progress feels real
-- Canvas only when you ask for it — never by default
+<!-- screenshot: tracker-tab -->
 
-### 🦊 Shapeshifter
-- Canvas is the default output — not a chat reply but a persistent, structured workspace saved to your vault
-- 10 composable block types: rich text, interactive checklists, coloured callout notes, code blocks, links, file tabs, buttons, text inputs, section dividers, and a sandboxed HTML block for charts, custom layouts, or anything the other blocks can't express
-- You ask for a plan — you get a tappable, editable canvas. You ask for a checklist — the items actually check off
-- Reads and writes your vault directly: scaffolds projects, runs commands, creates files without waiting for permission
-
-### 🐝 Keeper
-- Drop in raw notes, voice dumps, or rough ideas — Keeper extracts and organises them into the wiki
-- Follows a Johnny Decimal structure (identity, knowledge, projects, areas, relationships, creativity, systems, resources, media, events, questions, archive)
-- Surfaces forgotten knowledge, prioritising older reinforced memories you've likely lost track of
-- Updates existing pages rather than creating duplicates; keeps the index clean
-
-### 🐦 Tracker
 - **Weekly phrase** — a short line to sit with and return to through the week
 - **Calendar** — pulls in Google Calendar events so the day has context and shape
 - **To-dos** — p1 / p2 / p3 priorities; incomplete tasks carry forward automatically
 - **Rhythms** — recurring commitments across any cadence: daily, weekly, monthly, yearly
 - **Haiku** — three lines written fresh each morning as a quiet anchor for the day
 
-<!-- screenshot: tracker-and-shapeshifter — canvas and daily view side by side -->
+---
+
+## 💬 Chat — Talk to Mentor or Shapeshifter
+
+<!-- screenshot: chat-tab -->
+
+The Chat tab gives you direct conversation with both Mentor and Shapeshifter. Switch between them depending on whether you need patience or momentum.
+
+**Mentor** asks the right question before touching anything. One step at a time, one next action per response, `Step X of Y` progress markers. Canvas is opt-in — only when you ask.
+
+**Shapeshifter** infers your intent and acts. States one assumption in a line, then builds. Pivots fast if the read was off.
+
+---
+
+## 🦊 Shapeshifter — React app playground
+
+<!-- screenshot: shapeshifter-tab -->
+
+Shapeshifter's canvas is not a chat reply. It's a persistent, structured workspace saved to your vault — a mini app rendered live inside the tab.
+
+Canvases are built from 10 composable blocks:
+
+| Block | What it renders |
+|---|---|
+| `markdown` | Rich text — headers, bold, lists, inline code |
+| `tasks` | Interactive checklist — tap to check off |
+| `note` | Coloured callout box (amber, blue, green, red) |
+| `code` | Syntax-highlighted code block |
+| `links` | List of labelled URLs |
+| `filetabs` | Tab strip loading different vault files |
+| `button` | Tappable CTA — opens chat or a vault file |
+| `input` | Multi-line text field saved back to the canvas |
+| `section` | Horizontal divider with optional label |
+| `html` | Sandboxed WebView — full HTML / CSS / JS rendered inline |
+
+The `html` block is where it becomes a playground. Write a self-contained React component, a chart, a custom layout — anything. Shapeshifter generates it, the app renders it live.
+
+---
+
+## 🐝 Keeper — Personal wiki
+
+<!-- screenshot: keeper-tab -->
+
+Drop in raw notes, voice dumps, or rough ideas. Keeper extracts the signal, organises it into the wiki, and keeps the index clean. It surfaces forgotten knowledge — prioritising older, reinforced memories you've likely lost track of.
+
+The wiki follows a Johnny Decimal structure so nothing gets lost in an undifferentiated pile:
+
+`01-identity` · `02-knowledge` · `03-projects` · `04-areas` · `05-relationships` · `06-creativity` · `07-systems` · `08-resources` · `09-media` · `10-events` · `11-questions` · `99-archive`
 
 ---
 
 ## One vault, shared by all four
+
+<!-- screenshot: vault-structure -->
 
 ```text
 vault/
@@ -105,9 +136,13 @@ cd companions/server && npm install && npm run build && npm start
 
 Then open `http://localhost:3000/install`.
 
+<!-- screenshot: install-wizard -->
+
 ---
 
 ## Bring your own model
+
+<!-- screenshot: models-dashboard -->
 
 | Provider | Example |
 |---|---|
@@ -118,13 +153,19 @@ Then open `http://localhost:3000/install`.
 
 Change the model any time from the dashboard — no restart needed.
 
-### Local models with omlx
+### Running fully local on Apple Silicon
 
-Companions works well with [omlx](https://omlx.dev) — an OpenAI-compatible local inference server optimised for Apple Silicon. On an M1 Max with 32 GB unified memory, `Qwen3.6 35B A3B 4bit` runs comfortably and handles all four agents well. The 4-bit quantised mixture-of-experts architecture keeps the memory footprint tight while preserving reasoning quality.
+Companions runs well on Apple Silicon with [omlx](https://omlx.dev) — an OpenAI-compatible inference server built for Apple's unified memory architecture.
+
+**Chat model:** `Qwen3.6 35B A3B 4bit` — a mixture-of-experts model with 35B total parameters and ~3.6B active per token. The 4-bit quantisation fits comfortably in 32 GB of unified memory (M1 Max) with room to spare, while the MoE architecture keeps reasoning quality high despite the reduced footprint.
+
+**Vision model:** `Gemma 4 E2B 4bit` (Heretic-Uncensored) — Google's 2B effective-parameter edge model with a built-in 150M Vision Transformer encoder. Handles images, screenshots, and documents natively. The MLX 4-bit quantisation brings it to ~2–3 GB on-device with near-zero quality loss, running on the Neural Engine alongside the chat model.
 
 ```env
 DEFAULT_MODEL=openai-compat:http://localhost:8000/v1:Qwen3.6-35B-A3B-4bit
 DEFAULT_MODEL_KEY=your-omlx-api-key
+VISION_MODEL=openai-compat:http://localhost:8000/v1:gemma-4-E2B-Heretic-Uncensored-mlx-4bit
+VISION_MODEL_KEY=your-omlx-api-key
 ```
 
 ---
@@ -137,7 +178,7 @@ DEFAULT_MODEL_KEY=your-omlx-api-key
 
 Recommended remote access: [Tailscale](https://tailscale.com/) — the wizard detects it automatically.
 
-<!-- screenshot: qr-pairing — QR code screen on Android -->
+<!-- screenshot: qr-pairing -->
 
 ---
 
