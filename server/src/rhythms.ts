@@ -11,6 +11,8 @@ const RHYTHMS_PATH = path.join(VAULT_ROOT, "tasks", "rhythms.json");
 
 const DEFAULT_NOTIFY: Record<Rhythm["type"], number> = {
   daily: 60,
+  "every-n-days": 60,
+  "every-n-weeks": 1440,
   weekly: 1440,
   monthly: 4320,
   annual: 10080,
@@ -22,12 +24,13 @@ export interface Rhythm {
   id: string;
   title: string;
   description?: string;
-  type: "daily" | "weekly" | "monthly" | "annual";
+  type: "daily" | "every-n-days" | "every-n-weeks" | "weekly" | "monthly" | "annual";
   schedule: {
     days?: number[];
     dayOfMonth?: number;
     month?: number;
     day?: number;
+    n?: number;
   };
   notifyMinutes: number;
   active: boolean;
@@ -88,6 +91,18 @@ export function getCanonicalDueDate(rhythm: Rhythm, ref: Date): string {
     return toDateString(ref);
   }
 
+  if (rhythm.type === "every-n-days" || rhythm.type === "every-n-weeks") {
+    const n = rhythm.schedule.n ?? 1;
+    const intervalDays = rhythm.type === "every-n-weeks" ? n * 7 : n;
+    const start = parseDate(rhythm.createdAt.slice(0, 10));
+    const dayMs = 86400000;
+    const refMs = new Date(refYear, refMonth, refDay).getTime();
+    const daysSinceStart = Math.round((refMs - start.getTime()) / dayMs);
+    const remainder = daysSinceStart % intervalDays;
+    const offset = remainder === 0 ? 0 : intervalDays - remainder;
+    return toDateString(new Date(refYear, refMonth, refDay + offset));
+  }
+
   if (rhythm.type === "weekly") {
     const days = (rhythm.schedule.days ?? []).slice().sort((a, b) => a - b);
     if (days.length === 0) return toDateString(ref);
@@ -128,6 +143,16 @@ export function isDue(rhythm: Rhythm, onDate: Date): boolean {
 
   if (rhythm.type === "daily") {
     return true;
+  }
+
+  if (rhythm.type === "every-n-days" || rhythm.type === "every-n-weeks") {
+    const n = rhythm.schedule.n ?? 1;
+    const intervalDays = rhythm.type === "every-n-weeks" ? n * 7 : n;
+    const start = parseDate(rhythm.createdAt.slice(0, 10));
+    const dayMs = 86400000;
+    const onDateTime = new Date(y, m, d).getTime();
+    const daysSinceStart = Math.round((onDateTime - start.getTime()) / dayMs);
+    return daysSinceStart % intervalDays === 0;
   }
 
   if (rhythm.type === "weekly") {
@@ -175,6 +200,12 @@ function loadTokens(): { access_token?: string; refresh_token?: string } | null 
 function buildRRule(rhythm: Rhythm): string {
   if (rhythm.type === "daily") {
     return "RRULE:FREQ=DAILY";
+  }
+  if (rhythm.type === "every-n-days") {
+    return `RRULE:FREQ=DAILY;INTERVAL=${rhythm.schedule.n ?? 1}`;
+  }
+  if (rhythm.type === "every-n-weeks") {
+    return `RRULE:FREQ=WEEKLY;INTERVAL=${rhythm.schedule.n ?? 1}`;
   }
   if (rhythm.type === "weekly") {
     const days = (rhythm.schedule.days ?? []).map((d) => WEEKDAY_NAMES[d]).join(",");

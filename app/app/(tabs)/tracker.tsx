@@ -238,13 +238,14 @@ export default function LendaScreen() {
   const [rhythmForm, setRhythmForm] = useState<{
     visible: boolean;
     title: string;
-    type: 'daily' | 'weekly' | 'monthly' | 'annual';
+    type: 'daily' | 'every-n-days' | 'every-n-weeks' | 'weekly' | 'monthly' | 'annual';
     days: number[];
     dayOfMonth: number;
     month: number;
     day: number;
+    n: number;
     description: string;
-  }>({ visible: false, title: '', type: 'weekly', days: [], dayOfMonth: 1, month: 1, day: 1, description: '' });
+  }>({ visible: false, title: '', type: 'weekly', days: [], dayOfMonth: 1, month: 1, day: 1, n: 2, description: '' });
 
   // Settings modal
   const [settingsVisible, setSettingsVisible] = useState(false);
@@ -708,6 +709,8 @@ export default function LendaScreen() {
     if (!rhythmForm.title.trim()) return;
     const schedule =
       rhythmForm.type === 'daily' ? {} :
+      rhythmForm.type === 'every-n-days' ? { n: rhythmForm.n } :
+      rhythmForm.type === 'every-n-weeks' ? { n: rhythmForm.n } :
       rhythmForm.type === 'weekly' ? { days: rhythmForm.days.length ? rhythmForm.days : [0] } :
       rhythmForm.type === 'monthly' ? { dayOfMonth: rhythmForm.dayOfMonth } :
       { month: rhythmForm.month, day: rhythmForm.day };
@@ -1432,7 +1435,7 @@ export default function LendaScreen() {
             keyExtractor={r => r.id}
             ListEmptyComponent={<Text style={{ textAlign: 'center', color: theme.text, opacity: 0.4, marginTop: 40 }}>No rhythms yet</Text>}
             renderItem={({ item: r }) => {
-              const typeLabel = r.type === 'daily' ? 'D' : r.type === 'weekly' ? 'W' : r.type === 'monthly' ? 'M' : 'Y';
+              const typeLabel = r.type === 'daily' ? 'D' : r.type === 'every-n-days' ? `${r.schedule.n ?? 2}d` : r.type === 'every-n-weeks' ? `${r.schedule.n ?? 2}w` : r.type === 'weekly' ? 'W' : r.type === 'monthly' ? 'M' : 'Y';
               return (
                 <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border + '33' }}>
                   <View style={{ flex: 1 }}>
@@ -1461,12 +1464,21 @@ export default function LendaScreen() {
                 style={{ borderWidth: 1, borderColor: theme.border, borderRadius: 8, padding: 10, color: theme.text, marginBottom: 10, fontSize: 15 }}
               />
               {/* Type selector */}
-              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
-                {(['daily', 'weekly', 'monthly', 'annual'] as const).map(t => (
-                  <TouchableOpacity key={t} onPress={() => setRhythmForm(f => ({ ...f, type: t }))} style={{ flex: 1, paddingVertical: 8, borderRadius: 8, backgroundColor: rhythmForm.type === t ? ACCENT : ACCENT + '22', alignItems: 'center' }}>
-                    <Text style={{ fontSize: 13, fontWeight: '600', color: rhythmForm.type === t ? '#fff' : ACCENT }}>{t[0].toUpperCase() + t.slice(1)}</Text>
-                  </TouchableOpacity>
-                ))}
+              <View style={{ gap: 6, marginBottom: 10 }}>
+                <View style={{ flexDirection: 'row', gap: 6 }}>
+                  {(['daily', 'weekly', 'monthly', 'annual'] as const).map(t => (
+                    <TouchableOpacity key={t} onPress={() => setRhythmForm(f => ({ ...f, type: t }))} style={{ flex: 1, paddingVertical: 8, borderRadius: 8, backgroundColor: rhythmForm.type === t ? ACCENT : ACCENT + '22', alignItems: 'center' }}>
+                      <Text style={{ fontSize: 12, fontWeight: '600', color: rhythmForm.type === t ? '#fff' : ACCENT }}>{t[0].toUpperCase() + t.slice(1)}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <View style={{ flexDirection: 'row', gap: 6 }}>
+                  {(['every-n-days', 'every-n-weeks'] as const).map(t => (
+                    <TouchableOpacity key={t} onPress={() => setRhythmForm(f => ({ ...f, type: t }))} style={{ flex: 1, paddingVertical: 8, borderRadius: 8, backgroundColor: rhythmForm.type === t ? ACCENT : ACCENT + '22', alignItems: 'center' }}>
+                      <Text style={{ fontSize: 12, fontWeight: '600', color: rhythmForm.type === t ? '#fff' : ACCENT }}>{t === 'every-n-days' ? 'Every N Days' : 'Every N Weeks'}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
               </View>
               {/* Schedule by type */}
               {rhythmForm.type === 'weekly' && (
@@ -1496,6 +1508,15 @@ export default function LendaScreen() {
                   <TouchableOpacity onPress={() => setRhythmForm(f => ({ ...f, day: Math.max(1, f.day - 1) }))} style={{ padding: 6 }}><Text style={{ color: ACCENT, fontSize: 16 }}>−</Text></TouchableOpacity>
                   <Text style={{ color: theme.text, fontSize: 14, minWidth: 24, textAlign: 'center' }}>{rhythmForm.day}</Text>
                   <TouchableOpacity onPress={() => setRhythmForm(f => ({ ...f, day: Math.min(31, f.day + 1) }))} style={{ padding: 6 }}><Text style={{ color: ACCENT, fontSize: 16 }}>+</Text></TouchableOpacity>
+                </View>
+              )}
+              {(rhythmForm.type === 'every-n-days' || rhythmForm.type === 'every-n-weeks') && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10 }}>
+                  <Text style={{ color: theme.text, fontSize: 14 }}>Every</Text>
+                  <TouchableOpacity onPress={() => setRhythmForm(f => ({ ...f, n: Math.max(2, f.n - 1) }))} style={{ padding: 8 }}><Text style={{ color: ACCENT, fontSize: 18 }}>−</Text></TouchableOpacity>
+                  <Text style={{ color: theme.text, fontSize: 16, minWidth: 28, textAlign: 'center' }}>{rhythmForm.n}</Text>
+                  <TouchableOpacity onPress={() => setRhythmForm(f => ({ ...f, n: Math.min(365, f.n + 1) }))} style={{ padding: 8 }}><Text style={{ color: ACCENT, fontSize: 18 }}>+</Text></TouchableOpacity>
+                  <Text style={{ color: theme.text, fontSize: 14 }}>{rhythmForm.type === 'every-n-days' ? 'days' : 'weeks'}</Text>
                 </View>
               )}
               <TextInput
