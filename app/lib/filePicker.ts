@@ -5,6 +5,6 @@ export async function pickFile(): Promise<{ name: string; mimeType: string; base
   const result = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true });
   if (result.canceled) return null;
   const asset = result.assets[0];
-  const base64 = await FileSystem.readAsStringAsync(asset.uri, { encoding: FileSystem.EncodingType.Base64 });
+  const base64 = await FileSystem.readAsStringAsync(asset.uri, { encoding: 'base64' as any });
   return { name: asset.name, mimeType: asset.mimeType ?? 'application/octet-stream', base64 };
 }

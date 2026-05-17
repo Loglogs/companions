@@ -52,7 +52,7 @@ export default function HtmlBlock({ block, theme }: { block: CanvasBlock; theme:
         domStorageEnabled={false}
         scrollEnabled={false}
         injectedJavaScript={block.height ? undefined : AUTO_HEIGHT_JS}
-        onMessage={block.height ? undefined : (e) => {
+        onMessage={block.height ? undefined : (e: { nativeEvent: { data: string } }) => {
           const h = parseInt(e.nativeEvent.data, 10);
           if (!isNaN(h) && h > 0) setHeight(h);
         }}

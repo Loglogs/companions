@@ -1440,7 +1440,8 @@ export default function LendaScreen() {
             keyExtractor={r => r.id}
             ListEmptyComponent={<Text style={{ textAlign: 'center', color: theme.text, opacity: 0.4, marginTop: 40 }}>No rhythms yet</Text>}
             renderItem={({ item: r }) => {
-              const typeLabel = r.type === 'daily' ? 'D' : r.type === 'every-n-days' ? `${r.schedule.n ?? 2}d` : r.type === 'every-n-weeks' ? `${r.schedule.n ?? 2}w` : r.type === 'weekly' ? 'W' : r.type === 'monthly' ? 'M' : 'Y';
+              const rType = r.type as string;
+              const typeLabel = rType === 'daily' ? 'D' : rType === 'every-n-days' ? `${(r.schedule as any).n ?? 2}d` : rType === 'every-n-weeks' ? `${(r.schedule as any).n ?? 2}w` : rType === 'weekly' ? 'W' : rType === 'monthly' ? 'M' : 'Y';
               return (
                 <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.border + '33' }}>
                   <View style={{ flex: 1 }}>
