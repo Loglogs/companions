@@ -360,13 +360,17 @@ export const useStore = create<CompanionStore>((set, get) => ({
           messages = altRaw ? JSON.parse(altRaw) : [];
         }
 
-        // Also check server — use it only if it's longer than local
+        // Also check server — use it if it has more messages, OR same count but
+        // a longer last assistant message (catches server-side saves with full response)
         try {
           const msgsRes = await apiFetch(`/chats/${activeId}?project=${encodeURIComponent(projectSlug)}`);
           const serverMessages: Message[] = msgsRes.ok
             ? ((await msgsRes.json()).messages ?? [])
             : [];
-          if (serverMessages.length > messages.length) {
+          const serverLastLen = serverMessages.at(-1)?.text?.length ?? 0;
+          const localLastLen = messages.at(-1)?.text?.length ?? 0;
+          if (serverMessages.length > messages.length ||
+              (serverMessages.length === messages.length && serverLastLen > localLastLen)) {
             messages = serverMessages;
           }
         } catch { /* keep local */ }

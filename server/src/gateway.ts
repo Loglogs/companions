@@ -347,7 +347,6 @@ function handleAgentEvent(
   switch (event.type) {
     case "agent_start":
       agentRunning = true;
-      responseAccumulator = '';
       sharedSend.fn({ type: "agent_start" });
       break;
 
@@ -459,6 +458,7 @@ async function handleClientMessage(
       trackedConvSlug = msg.project ?? 'general';
       trackedUserMessage = msg.text ?? '';
       trackedPersona = effectivePersona;
+      responseAccumulator = '';
 
       // ── Vision path: direct Ollama streaming call with think:false ───────────
       // Bypasses Pi SDK session to avoid gemma4's extended thinking phase,
@@ -749,8 +749,10 @@ export function createGateway(server: Server): WebSocketServer {
       clearInterval(heartbeat);
       console.log(`[gateway] Client disconnected (clients: ${wss.clients.size})`);
       if (agentRunning) {
-        // Keep listener alive so agent_end fires correctly — buffer tokens for replay
-        replayBuffer = [];
+        // Seed replay buffer with text already streamed to the client so the
+        // reconnected client receives the full response, not just the second half.
+        const snapshot = responseAccumulator;
+        replayBuffer = snapshot ? [{ type: 'message_update', text: snapshot }] : [];
         sharedSend.fn = (p) => { replayBuffer?.push(p); };
         orphanedListener = listener;
         orphanedMode = trackedMode;
