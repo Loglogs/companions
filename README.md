@@ -227,7 +227,7 @@ VISION_MODEL_KEY=your-omlx-api-key
 ## Mobile + web
 
 - **Android:** [Download APK](https://github.com/sanieldoe/companions/releases/latest) — sideload and scan the QR code from the setup wizard
-- **iOS:** web app at `/app` (TestFlight build coming)
+- **Web:** `http://<your-server>/app` — full Expo web build, identical to Android. Works on desktop and iOS Safari over Tailscale.
 - **Dashboard:** `http://<your-server>/dashboard` — manage vault, models, personas, and updates
 
 Recommended remote access: [Tailscale](https://tailscale.com/) — the wizard detects it automatically.
