@@ -594,10 +594,13 @@ export function createGateway(server: Server): WebSocketServer {
     let trackedMode = getCurrentMode();
 
     // Send hello so client knows current mode immediately on connect/reconnect
+    // hasReplay signals that buffered tokens will follow — client must defer loadConversations
+    const hasReplay = agentRunning && replayBuffer !== null && replayBuffer.length > 0;
     send(ws, {
       type: "hello",
       mode: trackedMode,
       modes: getModeInfos(),
+      hasReplay,
     });
 
     console.log(`[gateway] Client connected (mode: ${trackedMode}, clients: ${wss.clients.size})`);
@@ -627,7 +630,8 @@ export function createGateway(server: Server): WebSocketServer {
       orphanedMode = null;
     }
     // Replay buffered tokens if agent is still running
-    if (replayBuffer !== null && agentRunning) {
+    if (replayBuffer !== null && agentRunning && replayBuffer.length > 0) {
+      send(ws, { type: 'agent_start' }); // clears client streamingText before replay
       for (const msg of replayBuffer) send(ws, msg);
     }
     replayBuffer = null;

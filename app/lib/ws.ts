@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useStore, flushSyncQueue } from './store';
 
 type ServerEvent =
-  | { type: 'hello'; mode: string; modes: Array<{ id: string; name: string; emoji: string; accent: string; mascot: string }> }
+  | { type: 'hello'; mode: string; modes: Array<{ id: string; name: string; emoji: string; accent: string; mascot: string }>; hasReplay?: boolean }
   | { type: 'agent_start' }
   | { type: 'agent_thinking' }
   | { type: 'message_update'; text: string }
@@ -15,7 +15,7 @@ type ServerEvent =
   | { type: 'calendar_result'; action: string; ok: boolean; eventId?: string; link?: string; error?: string };
 
 type ClientMessage =
-  | { type: 'message'; text: string; autoRoute?: boolean; project?: string; persona?: 'mentor' | 'shapeshifter'; fileName?: string; fileContent?: string; fileMime?: string }
+  | { type: 'message'; text: string; autoRoute?: boolean; project?: string; persona?: 'mentor' | 'shapeshifter' }
   | { type: 'switch_mode'; mode: string }
   | { type: 'abort' };
 
@@ -28,6 +28,7 @@ class WsService {
   private isConnecting = false;
   private rawListeners: Set<RawListener> = new Set();
   private pendingPersona: 'mentor' | 'shapeshifter' | null = null;
+  private pendingConversationLoad = false;
 
   addListener(fn: RawListener): void {
     this.rawListeners.add(fn);
@@ -79,19 +80,13 @@ class WsService {
         this._clearReconnect();
         const store = useStore.getState();
         store.setConnected(true);
-        // Flush any queued messages to the server BEFORE reloading history.
-        // Without this await, loadConversations races against the flush and
-        // can overwrite in-memory messages with stale server data.
         await flushSyncQueue();
-        // Restore the persisted project slug before loading conversations so the
-        // correct project's history is fetched on startup/reconnect.
         const persistedSlug = await AsyncStorage.getItem('current_project_slug').catch(() => null);
         if (persistedSlug) {
           useStore.getState().setCurrentProjectSlugOnly(persistedSlug);
         }
-        // Always reload conversation history on every new connection so that
-        // post-server-change reconnects pick up fresh history from the active server.
-        store.loadConversations();
+        // loadConversations is deferred to the hello handler so we know
+        // whether a replay is in progress before loading stale history.
       };
 
       ws.onmessage = (event) => {
@@ -109,8 +104,7 @@ class WsService {
 
       ws.onclose = () => {
         this.isConnecting = false;
-        useStore.getState().setConnected(false);
-        useStore.getState().setAgentState('idle');
+        useStore.setState({ connected: false, agentState: 'idle', streamingText: '' });
         if (this.shouldConnect) {
           this._scheduleReconnect();
         }
@@ -135,6 +129,14 @@ class WsService {
         store.setModes(event.modes);
         store.setMode(event.mode);
         store.setAgentState('idle');
+        if (event.hasReplay) {
+          // A replay stream is about to start — defer loading conversations until
+          // agent_end so we don't overwrite messages while tokens are streaming.
+          this.pendingConversationLoad = true;
+        } else {
+          this.pendingConversationLoad = false;
+          store.loadConversations();
+        }
         break;
       case 'agent_start':
         store.setAgentState('thinking');
@@ -151,6 +153,10 @@ class WsService {
         store.commitStreamingMessage((event.persona as 'mentor' | 'shapeshifter') ?? this.pendingPersona ?? 'mentor');
         this.pendingPersona = null;
         store.setAgentState('idle');
+        if (this.pendingConversationLoad) {
+          this.pendingConversationLoad = false;
+          store.loadConversations();
+        }
         break;
       case 'mode_changed':
         store.setMode(event.mode);
