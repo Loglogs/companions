@@ -46,13 +46,15 @@ async function main() {
   app.use(cors({
     origin: /^https?:\/\/(localhost|100\.\d+\.\d+\.\d+|[\w-]+\.ts\.net)(:\d+)?$/,
   }));
-  app.use(express.json({ limit: "16kb" }));
+  app.use(express.json({ limit: "2mb" }));
 
   // Serve web app (built from web/dist) — unauthenticated
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
   const webDist = path.resolve(__dirname, '../../web/dist');
   const appDist = path.resolve(__dirname, '../../app/dist');
   app.use('/app', express.static(appDist));
+  // Web dashboard assets (dashboard.html references /app/assets/... from the Vite build)
+  app.use('/app/assets', express.static(path.join(webDist, 'assets')));
   app.get('/app/*', (_req, res) => res.sendFile(path.join(appDist, 'index.html')));
   // Expo web build uses absolute paths for /_expo and /assets
   app.use('/_expo', express.static(path.join(appDist, '_expo')));

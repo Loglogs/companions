@@ -134,8 +134,9 @@ export default function PersonaChat({ persona }: PersonaChatProps) {
     const fileIcon = isImage ? '🖼️' : '📄';
     const displayText = file ? `${text ? text + '\n' : ''}${fileIcon} ${file.name}`.trim() : text;
     addUserMessage(displayText);
-    wsService.send({ type: 'message', text, project: currentProjectSlug, persona: activePersona, fileName: file?.name, fileContent: file?.content, fileMime: file?.mime, conversationId: activeConversationId ?? undefined });
-  }, [addUserMessage, currentProjectSlug, activePersona, activeConversationId]);
+    const convId = useStore.getState().ensureConversation();
+    wsService.send({ type: 'message', text, project: currentProjectSlug, persona: activePersona, fileName: file?.name, fileContent: file?.content, fileMime: file?.mime, conversationId: convId });
+  }, [addUserMessage, currentProjectSlug, activePersona]);
 
   const handleAbort = useCallback(() => { wsService.send({ type: 'abort' }); }, []);
 

@@ -56,6 +56,9 @@ const CHAT_SESSION_MODE: Mode = "mentor"; // canonical key for the shared chat s
 // Per-mode session cache
 const sessions = new Map<Mode, AgentSession>();
 
+// Per-conversation chat session cache (convId → session)
+const chatSessions = new Map<string, AgentSession>();
+
 // Per-mode fan-out listener sets — one entry per connected WebSocket
 const modeListeners = new Map<Mode, Set<(event: AgentSessionEvent) => void>>();
 for (const m of MODES) modeListeners.set(m, new Set());
@@ -74,12 +77,12 @@ export async function activateFallback(): Promise<boolean> {
   const fallbackModel = resolveFallbackModel();
   if (!fallbackModel) return false;
 
-  // Swap the chat session model (Mentor/Shapeshifter share one session)
-  const chatSession = sessions.get(CHAT_SESSION_MODE);
-  if (!chatSession) return false;
+  if (chatSessions.size === 0) return false;
 
   try {
-    await chatSession.setModel(fallbackModel);
+    for (const session of chatSessions.values()) {
+      await session.setModel(fallbackModel);
+    }
     _fallbackActive = true;
     console.log(`[agent] Fallback activated → ${fallbackModel.name}`);
     return true;
@@ -193,8 +196,10 @@ function resolveModel(mode: Mode): Model<any> | undefined {
   return resolveModelForMode(mode);
 }
 
-function sessionDir(mode: Mode): string {
-  const dir = path.join(SESSIONS_DIR, mode);
+function sessionDir(mode: Mode, convId?: string): string {
+  const dir = convId
+    ? path.join(SESSIONS_DIR, mode, convId)
+    : path.join(SESSIONS_DIR, mode);
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }
@@ -338,6 +343,108 @@ async function buildSession(mode: Mode): Promise<AgentSession> {
   return session;
 }
 
+async function buildChatSession(convId: string, slug: string): Promise<AgentSession> {
+  const agentDir = getAgentDir();
+  const skillBody = loadSkillBody(CHAT_SESSION_MODE);
+
+  const services = await createAgentSessionServices({
+    cwd: VAULT_ROOT,
+    agentDir,
+    authStorage: getSharedAuthStorage(),
+    modelRegistry: getSharedModelRegistry(),
+    resourceLoaderOptions: {
+      systemPromptOverride: () => skillBody,
+      skillsOverride: () => ({ skills: [], diagnostics: [] }),
+      extensionsOverride: (base) => ({ ...base, extensions: [] }),
+    },
+  });
+
+  const convSessionDir = path.join(VAULT_ROOT, "projects", slug, ".sessions", convId);
+  fs.mkdirSync(convSessionDir, { recursive: true });
+  const sessionManager = SessionManager.create(convSessionDir);
+  const model = resolveModel(CHAT_SESSION_MODE);
+  const { session } = await createAgentSessionFromServices({
+    services,
+    sessionManager,
+    tools: ["read", "write", "edit", "bash", "grep", "find", "ls"],
+    ...(model ? { model } : {}),
+  });
+
+  // Fan out to BOTH mentor and shapeshifter listener sets so the active
+  // listener receives events regardless of which persona is selected.
+  session.subscribe((event) => {
+    if (event.type === "tool_execution_start") {
+      const e = event as any;
+      console.log(`[agent.tool] START  tool=${e.toolName}  args=${JSON.stringify(e.args ?? {})}`);
+    } else if (event.type === "tool_execution_end") {
+      const e = event as any;
+      console.log(`[agent.tool] END    tool=${e.toolName}  isError=${e.isError}  result=${JSON.stringify(e.result ?? "").slice(0, 200)}`);
+    }
+
+    const sets = [modeListeners.get("mentor"), modeListeners.get("shapeshifter")];
+    for (const set of sets) {
+      if (set) for (const listener of set) listener(event);
+    }
+  });
+
+  return session;
+}
+
+/**
+ * If the session dir is empty but a vault convo exists, write a JSONL session
+ * file in the Pi SDK format so the session picks up the full conversation history.
+ */
+function bootstrapSessionFromVault(convId: string, slug: string): void {
+  const sessDir = path.join(VAULT_ROOT, 'projects', slug, '.sessions', convId);
+
+  // If there are already JSONL files, the SDK has its own history — skip
+  if (fs.existsSync(sessDir)) {
+    const existing = fs.readdirSync(sessDir).filter(f => f.endsWith('.jsonl'));
+    if (existing.length > 0) return;
+  }
+
+  const convoPath = path.join(VAULT_ROOT, 'projects', slug, 'convos', `${convId}.json`);
+  if (!fs.existsSync(convoPath)) return;
+
+  let messages: Array<{ role: string; text: string; timestamp?: number }>;
+  try {
+    messages = JSON.parse(fs.readFileSync(convoPath, 'utf8'));
+  } catch { return; }
+
+  const turns = messages.filter(m => m.role === 'user' || m.role === 'assistant');
+  if (turns.length === 0) return;
+
+  fs.mkdirSync(sessDir, { recursive: true });
+
+  const sessionId = crypto.randomUUID();
+  const now = new Date().toISOString();
+  const entries: object[] = [
+    { type: 'session', version: 3, id: sessionId, timestamp: now, cwd: VAULT_ROOT },
+  ];
+
+  let prevId: string | null = null;
+  for (const msg of turns) {
+    const id = crypto.randomUUID().slice(0, 8);
+    const ts = msg.timestamp ? new Date(msg.timestamp).toISOString() : now;
+    entries.push({ type: 'message', id, parentId: prevId, timestamp: ts, message: { role: msg.role, content: [{ type: 'text', text: msg.text }] } });
+    prevId = id;
+  }
+
+  const filename = `${now.replace(/[:.]/g, '-')}_${sessionId}.jsonl`;
+  fs.writeFileSync(path.join(sessDir, filename), entries.map(e => JSON.stringify(e)).join('\n') + '\n');
+  console.log(`[agent] Bootstrapped session from vault: ${turns.length} turns → ${filename}`);
+}
+
+export async function getChatSession(convId: string, slug: string): Promise<AgentSession> {
+  const key = `${slug}:${convId}`;
+  const existing = chatSessions.get(key);
+  if (existing) return existing;
+  bootstrapSessionFromVault(convId, slug);
+  const session = await buildChatSession(convId, slug);
+  chatSessions.set(key, session);
+  return session;
+}
+
 async function getOrCreateSession(mode: Mode): Promise<AgentSession> {
   const existing = sessions.get(mode);
   if (existing) return existing;
@@ -352,10 +459,14 @@ async function getOrCreateSession(mode: Mode): Promise<AgentSession> {
  * both share one session so we bust the canonical key.
  */
 export function resetSession(mode: Mode): void {
-  const sessionMode = CHAT_MODES.has(mode) ? CHAT_SESSION_MODE : mode;
-  if (sessions.has(sessionMode)) {
-    sessions.delete(sessionMode);
-    console.log(`[agent] Session reset for mode "${mode}" (key: ${sessionMode}) — will rebuild on next use`);
+  if (CHAT_MODES.has(mode)) {
+    chatSessions.clear();
+    console.log(`[agent] All chat sessions reset — will rebuild on next use`);
+  } else {
+    if (sessions.has(mode)) {
+      sessions.delete(mode);
+      console.log(`[agent] Session reset for mode "${mode}" — will rebuild on next use`);
+    }
   }
 }
 
@@ -441,7 +552,9 @@ export async function initAgent(mode: Mode = "mentor"): Promise<void> {
   getSharedAuthStorage();
   fs.mkdirSync(path.join(COMPANION_DIR, "projects"), { recursive: true });
   currentMode = mode;
-  currentSession = await getOrCreateSession(mode);
+  if (!CHAT_MODES.has(mode)) {
+    currentSession = await getOrCreateSession(mode);
+  }
   console.log(`[agent] Initialized with mode: ${mode}`);
 }
 
@@ -454,9 +567,12 @@ export async function switchMode(mode: Mode): Promise<void> {
   if (mode === currentMode) return;
   console.log(`[agent] Switching mode: ${currentMode} → ${mode}`);
   currentMode = mode;
-  // Mentor and Shapeshifter share one session — no session swap needed between them
-  const sessionMode = CHAT_MODES.has(mode) ? CHAT_SESSION_MODE : mode;
-  currentSession = await getOrCreateSession(sessionMode);
+  // Chat modes are lazy per-conversation — no shared session to swap to
+  if (CHAT_MODES.has(mode)) {
+    currentSession = null;
+    return;
+  }
+  currentSession = await getOrCreateSession(mode);
 }
 
 export function getSession(): AgentSession {

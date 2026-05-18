@@ -33,6 +33,7 @@ const VAULT_ROOT = process.env.COMPANION_VAULT
   : path.resolve(process.cwd(), "..");
 import {
   getSession,
+  getChatSession,
   switchMode,
   getCurrentMode,
   addModeListener,
@@ -425,7 +426,10 @@ async function handleClientMessage(
 
   if (msg.type === "abort") {
     try {
-      await getSession().abort();
+      const abortSession = CHAT_MODES.has(getCurrentMode() as Mode)
+        ? await getChatSession(trackedConvId ?? crypto.randomUUID(), trackedConvSlug)
+        : getSession();
+      await abortSession.abort();
     } catch (err) {
       send(ws, { type: "error", code: "abort_failed", message: String(err) });
     }
@@ -457,7 +461,7 @@ async function handleClientMessage(
       // Allow client to override persona per-message (e.g. Shapeshifter summoned into Mentor tab)
       const effectivePersona = msg.persona ?? currentMode;
       // Track context for server-side response save on agent_end
-      if (msg.conversationId) trackedConvId = msg.conversationId;
+      trackedConvId = msg.conversationId ?? crypto.randomUUID();
       trackedConvSlug = msg.project ?? 'general';
       trackedUserMessage = msg.text ?? '';
       trackedPersona = effectivePersona;
@@ -586,7 +590,11 @@ async function handleClientMessage(
         }
       }
       agentRunning = true; // set early — prevents cleanup() removing listener before agent_start fires
-      await getSession().prompt(promptText, { streamingBehavior: "followUp" });
+      const isChatMode = CHAT_MODES.has(getCurrentMode() as any);
+      const activeSession = isChatMode
+        ? await getChatSession(trackedConvId!, trackedConvSlug)
+        : getSession();
+      await activeSession.prompt(promptText, { streamingBehavior: "followUp" });
     } catch (err) {
       agentRunning = false; // reset if prompt failed before agent_start
       // If primary model is unreachable and fallback is configured, activate and retry once
@@ -599,7 +607,10 @@ async function handleClientMessage(
           });
           try {
             agentRunning = true;
-            await getSession().prompt(promptText, { streamingBehavior: "followUp" });
+            const retrySession = CHAT_MODES.has(getCurrentMode() as any)
+              ? await getChatSession(trackedConvId!, trackedConvSlug)
+              : getSession();
+            await retrySession.prompt(promptText, { streamingBehavior: "followUp" });
             return;
           } catch (retryErr) {
             agentRunning = false;
@@ -787,7 +798,10 @@ export function createGateway(server: Server): WebSocketServer {
       if (wss.clients.size === 0 && !agentRunning) {
         setTimeout(() => {
           if (wss.clients.size === 0 && !agentRunning) {
-            getSession()?.abort().catch(() => {});
+            const idleAbort = CHAT_MODES.has(getCurrentMode() as Mode)
+              ? trackedConvId ? getChatSession(trackedConvId, trackedConvSlug).then(s => s.abort()).catch(() => {}) : Promise.resolve()
+              : getSession()?.abort().catch(() => {});
+            idleAbort;
           }
         }, 30_000);
       }

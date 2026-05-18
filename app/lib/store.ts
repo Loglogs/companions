@@ -86,6 +86,7 @@ interface CompanionStore {
   setRouteToast(v: string | null): void;
   setCalDigest(v: string | null): void;
   setCurrentProjectSlugOnly(slug: string): void;
+  ensureConversation(): string;
   loadConversations(): Promise<void>;
   newConversation(folder?: string): Promise<void>;
   moveConversation(id: string, folder: string | undefined): Promise<void>;
@@ -411,6 +412,17 @@ export const useStore = create<CompanionStore>((set, get) => ({
     await AsyncStorage.setItem('conversation_index', JSON.stringify([meta]));
     await AsyncStorage.setItem('active_conversation_id', id);
     set({ conversations: [meta], activeConversationId: id, messages: [] });
+  },
+
+  ensureConversation() {
+    const { activeConversationId, currentProjectSlug, conversations } = get();
+    if (activeConversationId) return activeConversationId;
+    const id = `conv_${Date.now()}`;
+    const meta: ConversationMeta = { id, startedAt: Date.now(), title: 'New conversation', project: currentProjectSlug };
+    set({ activeConversationId: id, conversations: [meta, ...conversations].slice(0, 50) });
+    AsyncStorage.setItem('active_conversation_id', id).catch(() => {});
+    _syncToServer(id, [], meta);
+    return id;
   },
 
   async newConversation(folder?: string) {
