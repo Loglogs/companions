@@ -202,7 +202,7 @@ Then open `http://localhost:3000/install`.
 ## Setup wizard
 
 <p align="center">
-  <img src="docs/screenshots/setup.png" alt="Companions setup wizard" width="720">
+  <img src="docs/screenshots/Dashboard-setup.png" alt="Companions setup wizard" width="720">
 </p>
 
 The first-run wizard at `/install` gets the server into a usable state without hand-editing config files.
@@ -225,13 +225,27 @@ What it produces:
 
 <table>
 <tr>
-<td width="420" valign="top"><img src="docs/screenshots/dashboard.png" alt="Companions dashboard" width="400"></td>
+<td width="185" valign="top"><img src="docs/screenshots/Dashboard-personas.png" alt="Companions dashboard personas panel" width="170"></td>
 <td valign="top">
 
 The dashboard at `/dashboard` is the control surface after setup. It is separate from the chat UI and is meant for server administration, model changes, and maintenance.
 
 - **Personas** — rename each persona, swap emoji, and edit the underlying prompt text
+
+</td>
+</tr>
+<tr>
+<td valign="top"><img src="docs/screenshots/Dashboard-models.png" alt="Companions dashboard models panel" width="170"></td>
+<td valign="top">
+
 - **Models** — connect providers, store API keys, choose a default model, and override models per persona
+
+</td>
+</tr>
+<tr>
+<td valign="top"><img src="docs/screenshots/Dashboard-logs.png" alt="Companions dashboard logs panel" width="170"></td>
+<td valign="top">
+
 - **Vault** — inspect vault stats, change the vault path, and run backups
 - **Logs** — watch the live server log stream in the browser
 - **Setup** — copy connection details, generate QR/deep links for pairing, inspect version info, and run in-place updates
